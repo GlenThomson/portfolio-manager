@@ -24,6 +24,7 @@ export function MiniSparkline({ data, color, width = 120, height = 40 }: MiniSpa
       height,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
+        attributionLogo: false,
       },
       grid: {
         vertLines: { visible: false },

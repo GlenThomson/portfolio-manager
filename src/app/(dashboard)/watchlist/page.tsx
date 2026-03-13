@@ -71,10 +71,12 @@ export default function WatchlistPage() {
       for (let i = 0; i < symbols.length; i++) {
         try {
           const chartData = await chartResponses[i].json()
-          chartDataMap[symbols[i]] = chartData.map((d: { time: number; close: number }) => ({
-            time: d.time,
-            value: d.close,
-          }))
+          chartDataMap[symbols[i]] = chartData
+            .filter((d: { time: number; close: number }) => d.close > 0)
+            .map((d: { time: number; close: number }) => ({
+              time: d.time,
+              value: d.close,
+            }))
         } catch {
           chartDataMap[symbols[i]] = []
         }

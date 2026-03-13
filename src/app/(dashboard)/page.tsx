@@ -55,7 +55,7 @@ export default function DashboardPage() {
     setPositions(positionData)
 
     // Fetch live quotes for all position symbols
-    const posSymbols = [...new Set(positionData.map((p) => p.symbol))]
+    const posSymbols = Array.from(new Set(positionData.map((p) => p.symbol)))
     if (posSymbols.length > 0) {
       try {
         const res = await fetch(`/api/market/quote?symbols=${posSymbols.join(",")}`)
