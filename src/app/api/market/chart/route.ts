@@ -52,9 +52,9 @@ export async function GET(request: NextRequest) {
     // Evict old entries if cache grows too large
     if (cache.size > 100) {
       const now = Date.now()
-      for (const [k, v] of cache) {
+      cache.forEach((v, k) => {
         if (now - v.ts > CACHE_TTL) cache.delete(k)
-      }
+      })
     }
 
     return NextResponse.json(data)
