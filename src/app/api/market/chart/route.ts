@@ -1,6 +1,17 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getChart } from "@/lib/market/yahoo"
 
+// Simple in-memory cache to avoid redundant Yahoo API calls
+const cache = new Map<string, { data: unknown; ts: number }>()
+const CACHE_TTL = 60_000 // 1 minute
+
+function getCached(key: string) {
+  const entry = cache.get(key)
+  if (entry && Date.now() - entry.ts < CACHE_TTL) return entry.data
+  cache.delete(key)
+  return null
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const symbol = searchParams.get("symbol")
@@ -25,12 +36,27 @@ export async function GET(request: NextRequest) {
     }
     const days = periodMap[period] ?? 180
 
-    // If "before" is set, fetch a smaller chunk (1/3 of normal window) for faster load-more
     const endDate = before ? new Date(parseInt(before) * 1000) : new Date()
-    const fetchDays = before ? Math.max(Math.ceil(days / 3), 5) : days
-    const period1 = new Date(endDate.getTime() - fetchDays * 24 * 60 * 60 * 1000).toISOString().split("T")[0]
+    const period1 = new Date(endDate.getTime() - days * 24 * 60 * 60 * 1000).toISOString().split("T")[0]
+    const period2 = before ? endDate.toISOString().split("T")[0] : undefined
 
-    const data = await getChart(symbol.toUpperCase(), period1, interval, before ? endDate.toISOString().split("T")[0] : undefined)
+    const cacheKey = `${symbol.toUpperCase()}:${period1}:${interval}:${period2 ?? "now"}`
+    const cached = getCached(cacheKey)
+    if (cached) {
+      return NextResponse.json(cached)
+    }
+
+    const data = await getChart(symbol.toUpperCase(), period1, interval, period2)
+    cache.set(cacheKey, { data, ts: Date.now() })
+
+    // Evict old entries if cache grows too large
+    if (cache.size > 100) {
+      const now = Date.now()
+      for (const [k, v] of cache) {
+        if (now - v.ts > CACHE_TTL) cache.delete(k)
+      }
+    }
+
     return NextResponse.json(data)
   } catch (error) {
     console.error("Chart fetch error:", error)

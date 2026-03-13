@@ -22,13 +22,13 @@ import { cn } from "@/lib/utils"
 
 // Interval buttons — primary selector (like TradingView)
 const intervals = [
-  { label: "1m", interval: "1m", defaultPeriod: "1d" },
-  { label: "5m", interval: "5m", defaultPeriod: "1d" },
-  { label: "15m", interval: "15m", defaultPeriod: "5d" },
-  { label: "1h", interval: "1h", defaultPeriod: "1mo" },
-  { label: "4h", interval: "4h", defaultPeriod: "3mo" },
-  { label: "D", interval: "1d", defaultPeriod: "6mo" },
-  { label: "W", interval: "1wk", defaultPeriod: "2y" },
+  { label: "1m", interval: "1m", defaultPeriod: "5d" },
+  { label: "5m", interval: "5m", defaultPeriod: "1mo" },
+  { label: "15m", interval: "15m", defaultPeriod: "1mo" },
+  { label: "1h", interval: "1h", defaultPeriod: "6mo" },
+  { label: "4h", interval: "4h", defaultPeriod: "1y" },
+  { label: "D", interval: "1d", defaultPeriod: "2y" },
+  { label: "W", interval: "1wk", defaultPeriod: "5y" },
 ]
 
 
