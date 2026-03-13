@@ -1,273 +1,665 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, useCallback } from "react"
 import {
   createChart,
   type IChartApi,
+  type ISeriesApi,
   ColorType,
   type CandlestickData,
   type HistogramData,
   type Time,
+  CrosshairMode,
   CandlestickSeries,
   HistogramSeries,
   LineSeries,
 } from "lightweight-charts"
-import { calcSMA, calcRSI, calcMACD } from "@/lib/market/indicators"
+import { calcSMA, calcEMA, calcRSI, calcMACD, calcBollingerBands } from "@/lib/market/indicators"
 import type { OHLC } from "@/types/market"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 
-const periods = [
-  { label: "1D", value: "1d", interval: "5m" },
-  { label: "5D", value: "5d", interval: "15m" },
-  { label: "1M", value: "1mo", interval: "1h" },
-  { label: "3M", value: "3mo", interval: "1d" },
-  { label: "6M", value: "6mo", interval: "1d" },
-  { label: "1Y", value: "1y", interval: "1d" },
-  { label: "2Y", value: "2y", interval: "1wk" },
+// ── Constants ────────────────────────────────────────────
+
+// Interval buttons — primary selector (like TradingView)
+const intervals = [
+  { label: "1m", interval: "1m", defaultPeriod: "5d" },
+  { label: "5m", interval: "5m", defaultPeriod: "1mo" },
+  { label: "15m", interval: "15m", defaultPeriod: "1mo" },
+  { label: "1h", interval: "1h", defaultPeriod: "6mo" },
+  { label: "4h", interval: "4h", defaultPeriod: "1y" },
+  { label: "D", interval: "1d", defaultPeriod: "2y" },
+  { label: "W", interval: "1wk", defaultPeriod: "5y" },
 ]
+
+
+const CHART_BG = "#131722"
+const GRID_COLOR = "#1e222d"
+const TEXT_COLOR = "#787b86"
+const BORDER_COLOR = "#2a2e39"
+const CROSSHAIR_COLOR = "#555"
+const UP_COLOR = "#26a69a"
+const DOWN_COLOR = "#ef5350"
+
+interface Indicator {
+  id: string
+  label: string
+  active: boolean
+  overlay: boolean // true = on main chart, false = separate pane
+}
+
+const DEFAULT_INDICATORS: Indicator[] = [
+  { id: "vol", label: "Vol", active: true, overlay: true },
+  { id: "sma20", label: "SMA 20", active: false, overlay: true },
+  { id: "sma50", label: "SMA 50", active: true, overlay: true },
+  { id: "sma200", label: "SMA 200", active: false, overlay: true },
+  { id: "ema12", label: "EMA 12", active: false, overlay: true },
+  { id: "ema26", label: "EMA 26", active: false, overlay: true },
+  { id: "bb", label: "BB(20,2)", active: false, overlay: true },
+  { id: "rsi", label: "RSI(14)", active: true, overlay: false },
+  { id: "macd", label: "MACD", active: false, overlay: false },
+]
+
+const SMA_CONFIGS = [
+  { id: "sma20", period: 20, color: "#ff9800" },
+  { id: "sma50", period: 50, color: "#2196f3" },
+  { id: "sma200", period: 200, color: "#e040fb" },
+]
+
+const EMA_CONFIGS = [
+  { id: "ema12", period: 12, color: "#00bcd4" },
+  { id: "ema26", period: 26, color: "#ff5722" },
+]
+
+// ── Types ────────────────────────────────────────────────
 
 interface StockChartProps {
   symbol: string
   data: OHLC[]
   onPeriodChange: (period: string, interval: string) => void
-  activePeriod: string
+  activeInterval: string
+  activePeriod?: string
+  onLoadMore?: (beforeTimestamp: number) => void
 }
 
-export function StockChart({ symbol, data, onPeriodChange, activePeriod }: StockChartProps) {
+interface OHLCLegend {
+  time: string
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+  change: number
+  changePct: number
+}
+
+// ── Helpers ──────────────────────────────────────────────
+
+function formatVol(n: number) {
+  if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`
+  if (n >= 1e6) return `${(n / 1e6).toFixed(2)}M`
+  if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`
+  return n.toFixed(0)
+}
+
+function formatTime(ts: number) {
+  const d = new Date(ts * 1000)
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+}
+
+function filterClean(data: OHLC[]): OHLC[] {
+  return data.filter((d) => d.open > 0 && d.high > 0 && d.low > 0 && d.close > 0)
+}
+
+// ── Component ────────────────────────────────────────────
+
+export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoadMore }: StockChartProps) {
   const mainChartRef = useRef<HTMLDivElement>(null)
   const rsiChartRef = useRef<HTMLDivElement>(null)
   const macdChartRef = useRef<HTMLDivElement>(null)
-  const [showRSI, setShowRSI] = useState(true)
-  const [showMACD, setShowMACD] = useState(true)
+  const [indicators, setIndicators] = useState<Indicator[]>(DEFAULT_INDICATORS)
+  const [legend, setLegend] = useState<OHLCLegend | null>(null)
+  const [showIndicatorMenu, setShowIndicatorMenu] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  // Stable refs for callbacks (avoid putting these in effect deps)
+  const dataRef = useRef<OHLC[]>(data)
+  dataRef.current = data
+  const onLoadMoreRef = useRef(onLoadMore)
+  onLoadMoreRef.current = onLoadMore
+  const loadMoreCooldownRef = useRef(false)
+
+  // Chart + series refs (persist between data updates, reset on chart recreation)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const chartsRef = useRef<{
+    main: IChartApi | null
+    rsi: IChartApi | null
+    macd: IChartApi | null
+    series: Record<string, ISeriesApi<any>>
+  }>({ main: null, rsi: null, macd: null, series: {} })
+
+  // Track last dataset endpoint to detect fresh load vs prepend
+  const lastDataEndRef = useRef<number | null>(null)
+
+  const showRSI = indicators.find((i) => i.id === "rsi")?.active ?? false
+  const showMACD = indicators.find((i) => i.id === "macd")?.active ?? false
+
+  // Set initial legend from last candle
+  useEffect(() => {
+    if (data.length > 0) {
+      const last = data[data.length - 1]
+      const prev = data.length > 1 ? data[data.length - 2] : last
+      setLegend({
+        time: formatTime(last.time),
+        open: last.open,
+        high: last.high,
+        low: last.low,
+        close: last.close,
+        volume: last.volume,
+        change: last.close - prev.close,
+        changePct: prev.close > 0 ? ((last.close - prev.close) / prev.close) * 100 : 0,
+      })
+    }
+  }, [data])
+
+  // Close indicator menu on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowIndicatorMenu(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClick)
+    return () => document.removeEventListener("mousedown", handleClick)
+  }, [])
+
+  const toggleIndicator = useCallback((id: string) => {
+    setIndicators((prev) => prev.map((ind) => ind.id === id ? { ...ind, active: !ind.active } : ind))
+  }, [])
+
+  // ── Shared: populate all series from current data ──────
+
+  const populateAllSeries = useCallback(() => {
+    const { series } = chartsRef.current
+    const cleanData = filterClean(dataRef.current)
+    if (cleanData.length === 0) return
+
+    // Candle
+    if (series["candle"]) {
+      series["candle"].setData(cleanData.map((d) => ({
+        time: d.time as Time, open: d.open, high: d.high, low: d.low, close: d.close,
+      })))
+    }
+
+    // Volume
+    if (series["volume"]) {
+      series["volume"].setData(cleanData.map((d) => ({
+        time: d.time as Time, value: d.volume,
+        color: d.close >= d.open ? "rgba(38, 166, 154, 0.25)" : "rgba(239, 83, 80, 0.25)",
+      })))
+    }
+
+    // SMA
+    for (const cfg of SMA_CONFIGS) {
+      if (series[cfg.id] && cleanData.length > cfg.period) {
+        const smaData = calcSMA(cleanData, cfg.period)
+        series[cfg.id].setData(smaData.map((d) => ({ time: d.time as Time, value: d.value })))
+      }
+    }
+
+    // EMA
+    for (const cfg of EMA_CONFIGS) {
+      if (series[cfg.id] && cleanData.length > cfg.period) {
+        const emaData = calcEMA(cleanData, cfg.period)
+        series[cfg.id].setData(emaData.map((d) => ({ time: d.time as Time, value: d.value })))
+      }
+    }
+
+    // Bollinger Bands
+    if (series["bb-upper"] && series["bb-middle"] && series["bb-lower"] && cleanData.length > 20) {
+      const bb = calcBollingerBands(cleanData, 20, 2)
+      series["bb-upper"].setData(bb.upper.map((d) => ({ time: d.time as Time, value: d.value })))
+      series["bb-middle"].setData(bb.middle.map((d) => ({ time: d.time as Time, value: d.value })))
+      series["bb-lower"].setData(bb.lower.map((d) => ({ time: d.time as Time, value: d.value })))
+    }
+
+    // RSI
+    const allTimestamps = cleanData.map((d) => ({ time: d.time as Time, value: 0 }))
+    if (series["rsi-anchor"]) series["rsi-anchor"].setData(allTimestamps)
+    if (series["rsi"] && cleanData.length > 14) {
+      const rsiData = calcRSI(cleanData)
+      series["rsi"].setData(rsiData.map((d) => ({ time: d.time as Time, value: d.value })))
+      if (series["rsi-70"]) series["rsi-70"].setData(rsiData.map((d) => ({ time: d.time as Time, value: 70 })))
+      if (series["rsi-30"]) series["rsi-30"].setData(rsiData.map((d) => ({ time: d.time as Time, value: 30 })))
+    }
+
+    // MACD
+    if (series["macd-anchor"]) series["macd-anchor"].setData(allTimestamps)
+    if (series["macd-line"] && cleanData.length > 26) {
+      const macdData = calcMACD(cleanData)
+      if (series["macd-line"]) series["macd-line"].setData(macdData.macdLine.map((d) => ({ time: d.time as Time, value: d.value })))
+      if (series["macd-signal"]) series["macd-signal"].setData(macdData.signalLine.map((d) => ({ time: d.time as Time, value: d.value })))
+      if (series["macd-hist"]) series["macd-hist"].setData(macdData.histogram.map((d) => ({
+        time: d.time as Time, value: d.value,
+        color: d.value >= 0 ? "rgba(38,166,154,0.6)" : "rgba(239,83,80,0.6)",
+      })))
+    }
+  }, [])
+
+  // ── Effect 1: Chart lifecycle (create/destroy) ─────────
+  // Runs when indicators change. Creates charts + empty series.
+  // Populates data from ref, then fitContent.
 
   useEffect(() => {
-    if (!mainChartRef.current || data.length === 0) return
+    if (!mainChartRef.current) return
+
+    const container = mainChartRef.current
 
     const chartOptions = {
       layout: {
-        textColor: "hsl(215, 20.2%, 65.1%)",
-        background: { type: ColorType.Solid as const, color: "transparent" },
+        textColor: TEXT_COLOR,
+        background: { type: ColorType.Solid as const, color: CHART_BG },
+        fontFamily: "'Trebuchet MS', Roboto, sans-serif",
+        fontSize: 11,
+        attributionLogo: false,
       },
       grid: {
-        vertLines: { color: "hsl(217.2, 32.6%, 17.5%)" },
-        horzLines: { color: "hsl(217.2, 32.6%, 17.5%)" },
+        vertLines: { color: GRID_COLOR },
+        horzLines: { color: GRID_COLOR },
       },
-      crosshair: { mode: 0 as const },
-      rightPriceScale: { borderColor: "hsl(217.2, 32.6%, 17.5%)" },
-      timeScale: { borderColor: "hsl(217.2, 32.6%, 17.5%)", timeVisible: true },
+      crosshair: {
+        mode: CrosshairMode.Normal,
+        vertLine: { color: CROSSHAIR_COLOR, width: 1 as const, style: 3 as const, labelBackgroundColor: "#2a2e39" },
+        horzLine: { color: CROSSHAIR_COLOR, width: 1 as const, style: 3 as const, labelBackgroundColor: "#2a2e39" },
+      },
+      rightPriceScale: {
+        borderColor: BORDER_COLOR,
+        scaleMargins: { top: 0.05, bottom: 0.05 },
+      },
+      timeScale: {
+        borderColor: BORDER_COLOR,
+        timeVisible: true,
+        secondsVisible: false,
+        rightOffset: 5,
+        barSpacing: 6,
+      },
+      watermark: { visible: false },
+      handleScroll: { vertTouchDrag: false },
     }
 
-    // Main chart with candlesticks
-    const mainChart = createChart(mainChartRef.current, {
+    const subChartOptions = {
       ...chartOptions,
-      height: 400,
-    })
-
-    const candleSeries = mainChart.addSeries(CandlestickSeries, {
-      upColor: "#22c55e",
-      downColor: "#ef4444",
-      borderDownColor: "#ef4444",
-      borderUpColor: "#22c55e",
-      wickDownColor: "#ef4444",
-      wickUpColor: "#22c55e",
-    })
-
-    const candleData: CandlestickData[] = data.map((d) => ({
-      time: d.time as Time,
-      open: d.open,
-      high: d.high,
-      low: d.low,
-      close: d.close,
-    }))
-    candleSeries.setData(candleData)
-
-    // Volume
-    const volumeSeries = mainChart.addSeries(HistogramSeries, {
-      priceFormat: { type: "volume" },
-      priceScaleId: "volume",
-    })
-    mainChart.priceScale("volume").applyOptions({
-      scaleMargins: { top: 0.8, bottom: 0 },
-    })
-    const volumeData: HistogramData[] = data.map((d) => ({
-      time: d.time as Time,
-      value: d.volume,
-      color: d.close >= d.open ? "rgba(34, 197, 94, 0.3)" : "rgba(239, 68, 68, 0.3)",
-    }))
-    volumeSeries.setData(volumeData)
-
-    // SMA 50
-    if (data.length > 50) {
-      const sma50 = calcSMA(data, 50)
-      const sma50Series = mainChart.addSeries(LineSeries, {
-        color: "#3b82f6",
-        lineWidth: 1,
-        title: "SMA 50",
-      })
-      sma50Series.setData(sma50.map((d) => ({ time: d.time as Time, value: d.value })))
+      height: 130,
+      rightPriceScale: { ...chartOptions.rightPriceScale, scaleMargins: { top: 0.1, bottom: 0.05 } },
     }
 
-    // SMA 200
-    if (data.length > 200) {
-      const sma200 = calcSMA(data, 200)
-      const sma200Series = mainChart.addSeries(LineSeries, {
-        color: "#f59e0b",
-        lineWidth: 1,
-        title: "SMA 200",
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const series: Record<string, ISeriesApi<any>> = {}
+
+    // ── Main chart ──────────────────────────────────────
+    const mainChart = createChart(container, {
+      ...chartOptions,
+      height: Math.max(400, window.innerHeight - 300),
+    })
+
+    series["candle"] = mainChart.addSeries(CandlestickSeries, {
+      upColor: UP_COLOR,
+      downColor: DOWN_COLOR,
+      borderDownColor: DOWN_COLOR,
+      borderUpColor: UP_COLOR,
+      wickDownColor: DOWN_COLOR,
+      wickUpColor: UP_COLOR,
+    })
+
+    if (indicators.find((i) => i.id === "vol")?.active) {
+      series["volume"] = mainChart.addSeries(HistogramSeries, {
+        priceFormat: { type: "volume" },
+        priceScaleId: "volume",
       })
-      sma200Series.setData(sma200.map((d) => ({ time: d.time as Time, value: d.value })))
+      mainChart.priceScale("volume").applyOptions({
+        scaleMargins: { top: 0.82, bottom: 0 },
+      })
     }
 
-    mainChart.timeScale().fitContent()
-
-    // Track all charts for resize
-    const charts: IChartApi[] = [mainChart]
-
-    // RSI chart
-    let rsiChart: IChartApi | undefined
-    if (showRSI && rsiChartRef.current && data.length > 14) {
-      rsiChart = createChart(rsiChartRef.current, {
-        ...chartOptions,
-        height: 150,
-      })
-
-      const rsiData = calcRSI(data)
-      const rsiSeries = rsiChart.addSeries(LineSeries, {
-        color: "#a855f7",
-        lineWidth: 2,
-        title: "RSI(14)",
-      })
-      rsiSeries.setData(rsiData.map((d) => ({ time: d.time as Time, value: d.value })))
-
-      // Overbought/oversold lines
-      const addLevel = (value: number, color: string) => {
-        const line = rsiChart!.addSeries(LineSeries, {
-          color,
-          lineWidth: 1,
-          lineStyle: 2,
+    for (const cfg of SMA_CONFIGS) {
+      if (indicators.find((i) => i.id === cfg.id)?.active) {
+        series[cfg.id] = mainChart.addSeries(LineSeries, {
+          color: cfg.color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
         })
-        line.setData(
-          rsiData.map((d) => ({ time: d.time as Time, value }))
-        )
       }
-      addLevel(70, "rgba(239, 68, 68, 0.5)")
-      addLevel(30, "rgba(34, 197, 94, 0.5)")
+    }
 
-      rsiChart.timeScale().fitContent()
-      charts.push(rsiChart)
+    for (const cfg of EMA_CONFIGS) {
+      if (indicators.find((i) => i.id === cfg.id)?.active) {
+        series[cfg.id] = mainChart.addSeries(LineSeries, {
+          color: cfg.color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+        })
+      }
+    }
 
-      // Sync time scales
+    if (indicators.find((i) => i.id === "bb")?.active) {
+      series["bb-upper"] = mainChart.addSeries(LineSeries, {
+        color: "rgba(33, 150, 243, 0.5)", lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+      })
+      series["bb-middle"] = mainChart.addSeries(LineSeries, {
+        color: "rgba(33, 150, 243, 0.3)", lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false,
+      })
+      series["bb-lower"] = mainChart.addSeries(LineSeries, {
+        color: "rgba(33, 150, 243, 0.5)", lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+      })
+    }
+
+    // ── RSI sub-chart ───────────────────────────────────
+    let rsiChart: IChartApi | undefined
+    if (showRSI && rsiChartRef.current) {
+      rsiChart = createChart(rsiChartRef.current, subChartOptions)
+
+      series["rsi-anchor"] = rsiChart.addSeries(LineSeries, {
+        color: "transparent", lineWidth: 1, priceLineVisible: false, lastValueVisible: false, visible: false,
+      })
+      series["rsi"] = rsiChart.addSeries(LineSeries, {
+        color: "#b39ddb", lineWidth: 1, priceLineVisible: false, lastValueVisible: true,
+      })
+      series["rsi-70"] = rsiChart.addSeries(LineSeries, {
+        color: "rgba(239,83,80,0.3)", lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false,
+      })
+      series["rsi-30"] = rsiChart.addSeries(LineSeries, {
+        color: "rgba(38,166,154,0.3)", lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false,
+      })
+
+      // Bidirectional sync
       mainChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
         if (range) rsiChart?.timeScale().setVisibleLogicalRange(range)
       })
+      rsiChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+        if (range) mainChart.timeScale().setVisibleLogicalRange(range)
+      })
     }
 
-    // MACD chart
+    // ── MACD sub-chart ──────────────────────────────────
     let macdChart: IChartApi | undefined
-    if (showMACD && macdChartRef.current && data.length > 26) {
-      macdChart = createChart(macdChartRef.current, {
-        ...chartOptions,
-        height: 150,
+    if (showMACD && macdChartRef.current) {
+      macdChart = createChart(macdChartRef.current, subChartOptions)
+
+      series["macd-anchor"] = macdChart.addSeries(LineSeries, {
+        color: "transparent", lineWidth: 1, priceLineVisible: false, lastValueVisible: false, visible: false,
+      })
+      series["macd-line"] = macdChart.addSeries(LineSeries, {
+        color: "#2196f3", lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+      })
+      series["macd-signal"] = macdChart.addSeries(LineSeries, {
+        color: "#ff9800", lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+      })
+      series["macd-hist"] = macdChart.addSeries(HistogramSeries, {
+        priceLineVisible: false, lastValueVisible: false,
       })
 
-      const macd = calcMACD(data)
-
-      const macdLineSeries = macdChart.addSeries(LineSeries, {
-        color: "#3b82f6",
-        lineWidth: 2,
-        title: "MACD",
-      })
-      macdLineSeries.setData(macd.macdLine.map((d) => ({ time: d.time as Time, value: d.value })))
-
-      const signalSeries = macdChart.addSeries(LineSeries, {
-        color: "#f97316",
-        lineWidth: 1,
-        title: "Signal",
-      })
-      signalSeries.setData(macd.signalLine.map((d) => ({ time: d.time as Time, value: d.value })))
-
-      const histogramSeries = macdChart.addSeries(HistogramSeries, {
-        title: "Histogram",
-      })
-      histogramSeries.setData(
-        macd.histogram.map((d) => ({
-          time: d.time as Time,
-          value: d.value,
-          color: d.value >= 0 ? "rgba(34, 197, 94, 0.6)" : "rgba(239, 68, 68, 0.6)",
-        }))
-      )
-
-      macdChart.timeScale().fitContent()
-      charts.push(macdChart)
-
+      // Bidirectional sync
       mainChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
         if (range) macdChart?.timeScale().setVisibleLogicalRange(range)
       })
+      macdChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+        if (range) mainChart.timeScale().setVisibleLogicalRange(range)
+      })
     }
 
-    // Resize all charts when container width changes
-    const resizeObserver = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const width = entry.contentRect.width
-        if (width > 0) {
-          charts.forEach((chart) => chart.applyOptions({ width }))
+    // Store refs
+    chartsRef.current = { main: mainChart, rsi: rsiChart ?? null, macd: macdChart ?? null, series }
+
+    // Populate data from ref (covers indicator toggle when data already loaded)
+    populateAllSeries()
+    mainChart.timeScale().fitContent()
+    rsiChart?.timeScale().fitContent()
+    macdChart?.timeScale().fitContent()
+    // Reset so next data update triggers fitContent too
+    lastDataEndRef.current = null
+
+    // ── Crosshair OHLC legend ───────────────────────────
+
+    mainChart.subscribeCrosshairMove((param) => {
+      const currentData = filterClean(dataRef.current)
+      if (!param.time || !param.seriesData) {
+        const last = currentData[currentData.length - 1]
+        const prev = currentData.length > 1 ? currentData[currentData.length - 2] : last
+        if (last) {
+          setLegend({
+            time: formatTime(last.time),
+            open: last.open, high: last.high, low: last.low, close: last.close, volume: last.volume,
+            change: last.close - prev.close,
+            changePct: prev.close > 0 ? ((last.close - prev.close) / prev.close) * 100 : 0,
+          })
         }
+        return
+      }
+
+      const candle = param.seriesData.get(series["candle"]) as CandlestickData | undefined
+      const vol = series["volume"] ? param.seriesData.get(series["volume"]) as HistogramData | undefined : undefined
+
+      if (candle) {
+        const idx = currentData.findIndex((d) => d.time === (param.time as number))
+        const prev = idx > 0 ? currentData[idx - 1] : currentData[idx]
+        setLegend({
+          time: formatTime(param.time as number),
+          open: candle.open,
+          high: candle.high,
+          low: candle.low,
+          close: candle.close,
+          volume: vol?.value ?? 0,
+          change: candle.close - prev.close,
+          changePct: prev.close > 0 ? ((candle.close - prev.close) / prev.close) * 100 : 0,
+        })
       }
     })
-    resizeObserver.observe(mainChartRef.current)
+
+    // ── Load more on scroll to left edge ────────────────
+
+    let loadMoreEnabled = false
+    const loadMoreTimer = setTimeout(() => { loadMoreEnabled = true }, 800)
+
+    mainChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+      if (!range || !loadMoreEnabled || loadMoreCooldownRef.current) return
+      if (!onLoadMoreRef.current) return
+      const currentData = filterClean(dataRef.current)
+      if (currentData.length === 0) return
+      if (range.from <= 5) {
+        loadMoreCooldownRef.current = true
+        setTimeout(() => { loadMoreCooldownRef.current = false }, 1500)
+        onLoadMoreRef.current(currentData[0].time)
+      }
+    })
+
+    // ── Resize observer ─────────────────────────────────
+
+    const allCharts = [mainChart, rsiChart, macdChart].filter(Boolean) as IChartApi[]
+
+    const handleResize = () => {
+      const newHeight = Math.max(400, window.innerHeight - 300)
+      mainChart.applyOptions({ height: newHeight })
+    }
+    window.addEventListener("resize", handleResize)
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const w = entry.contentRect.width
+        if (w > 0) allCharts.forEach((c) => c.applyOptions({ width: w }))
+      }
+    })
+    resizeObserver.observe(container)
 
     return () => {
+      clearTimeout(loadMoreTimer)
+      window.removeEventListener("resize", handleResize)
       resizeObserver.disconnect()
       mainChart.remove()
       rsiChart?.remove()
       macdChart?.remove()
+      chartsRef.current = { main: null, rsi: null, macd: null, series: {} }
     }
-  }, [data, showRSI, showMACD])
+  }, [indicators, showRSI, showMACD, populateAllSeries])
+
+  // ── Effect 2: Data update (in-place, no chart recreation) ──
+  // Runs when data prop changes. Updates series data without touching the chart.
+  // fitContent only on fresh loads (last timestamp changed), not on prepends.
+
+  useEffect(() => {
+    const { main, rsi, macd } = chartsRef.current
+    if (!main) return // chart not created yet
+
+    const cleanData = filterClean(data)
+    if (cleanData.length === 0) return
+
+    populateAllSeries()
+
+    // Detect fresh load vs prepend:
+    // Fresh load = last candle timestamp changed (new dataset)
+    // Prepend = last candle same, earlier candles added
+    const currentEnd = cleanData[cleanData.length - 1].time
+    const isFreshLoad = lastDataEndRef.current === null || currentEnd !== lastDataEndRef.current
+    lastDataEndRef.current = currentEnd
+
+    if (isFreshLoad) {
+      main.timeScale().fitContent()
+      rsi?.timeScale().fitContent()
+      macd?.timeScale().fitContent()
+    }
+    // On prepend: do nothing to the view — new candles just appear to the left
+  }, [data, populateAllSeries])
+
+  // ── Render ───────────────────────────────────────────────
+
+  const isPositive = (legend?.change ?? 0) >= 0
 
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <CardTitle>{symbol}</CardTitle>
-          <div className="flex gap-1">
-            {periods.map((p) => (
-              <Button
-                key={p.value}
-                variant={activePeriod === p.value ? "default" : "ghost"}
-                size="sm"
-                className="h-7 px-2 text-xs"
-                onClick={() => onPeriodChange(p.value, p.interval)}
-              >
-                {p.label}
-              </Button>
-            ))}
+    <div className="rounded-md overflow-hidden" style={{ background: CHART_BG }}>
+      {/* ── Toolbar ─────────────────────────────────────── */}
+      <div className="flex items-center gap-1 px-3 py-1.5 border-b" style={{ borderColor: BORDER_COLOR }}>
+        {/* Interval selector (candle size) */}
+        {intervals.map((iv) => (
+          <button
+            key={iv.interval}
+            onClick={() => onPeriodChange(iv.defaultPeriod, iv.interval)}
+            className={cn(
+              "px-2 py-1 text-xs font-medium rounded transition-colors",
+              activeInterval === iv.interval
+                ? "bg-[#2962ff] text-white"
+                : "text-[#787b86] hover:text-[#d1d4dc]"
+            )}
+          >
+            {iv.label}
+          </button>
+        ))}
+
+        <div className="w-px h-4 mx-1" style={{ background: BORDER_COLOR }} />
+
+        {/* Indicators button */}
+        <div className="relative" ref={menuRef}>
+          <button
+            onClick={() => setShowIndicatorMenu(!showIndicatorMenu)}
+            className={cn(
+              "px-2 py-1 text-xs font-medium rounded transition-colors",
+              showIndicatorMenu ? "bg-[#2962ff] text-white" : "text-[#787b86] hover:text-[#d1d4dc]"
+            )}
+          >
+            Indicators
+          </button>
+
+          {showIndicatorMenu && (
+            <div
+              className="absolute top-full left-0 mt-1 z-50 rounded-md shadow-xl py-1 min-w-[180px]"
+              style={{ background: "#1e222d", border: `1px solid ${BORDER_COLOR}` }}
+            >
+              <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider" style={{ color: TEXT_COLOR }}>
+                Overlays
+              </div>
+              {indicators.filter((i) => i.overlay).map((ind) => (
+                <button
+                  key={ind.id}
+                  onClick={() => toggleIndicator(ind.id)}
+                  className="flex items-center gap-2 w-full px-3 py-1.5 text-xs hover:bg-[#2a2e39] transition-colors text-left"
+                  style={{ color: ind.active ? "#d1d4dc" : TEXT_COLOR }}
+                >
+                  <span className={cn("w-3 h-3 rounded-sm border flex items-center justify-center text-[8px]",
+                    ind.active ? "bg-[#2962ff] border-[#2962ff]" : "border-[#555]"
+                  )}>
+                    {ind.active && "✓"}
+                  </span>
+                  {ind.label}
+                </button>
+              ))}
+              <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider mt-1" style={{ color: TEXT_COLOR }}>
+                Oscillators
+              </div>
+              {indicators.filter((i) => !i.overlay).map((ind) => (
+                <button
+                  key={ind.id}
+                  onClick={() => toggleIndicator(ind.id)}
+                  className="flex items-center gap-2 w-full px-3 py-1.5 text-xs hover:bg-[#2a2e39] transition-colors text-left"
+                  style={{ color: ind.active ? "#d1d4dc" : TEXT_COLOR }}
+                >
+                  <span className={cn("w-3 h-3 rounded-sm border flex items-center justify-center text-[8px]",
+                    ind.active ? "bg-[#2962ff] border-[#2962ff]" : "border-[#555]"
+                  )}>
+                    {ind.active && "✓"}
+                  </span>
+                  {ind.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Active indicator pills */}
+        <div className="flex gap-1 ml-1">
+          {indicators.filter((i) => i.active && i.id !== "vol").map((ind) => (
+            <span key={ind.id} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "#2a2e39", color: "#787b86" }}>
+              {ind.label}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* ── OHLC Legend overlay ──────────────────────────── */}
+      <div className="relative">
+        {legend && (
+          <div className="absolute top-2 left-3 z-10 flex items-center gap-3 text-xs pointer-events-none" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>
+            <span className="font-semibold text-[#d1d4dc]">{symbol}</span>
+            <span className="text-[#787b86]">{legend.time}</span>
+            <span className="text-[#787b86]">O <span style={{ color: isPositive ? UP_COLOR : DOWN_COLOR }}>{legend.open.toFixed(2)}</span></span>
+            <span className="text-[#787b86]">H <span style={{ color: isPositive ? UP_COLOR : DOWN_COLOR }}>{legend.high.toFixed(2)}</span></span>
+            <span className="text-[#787b86]">L <span style={{ color: isPositive ? UP_COLOR : DOWN_COLOR }}>{legend.low.toFixed(2)}</span></span>
+            <span className="text-[#787b86]">C <span style={{ color: isPositive ? UP_COLOR : DOWN_COLOR }}>{legend.close.toFixed(2)}</span></span>
+            <span style={{ color: isPositive ? UP_COLOR : DOWN_COLOR }}>
+              {isPositive ? "+" : ""}{legend.change.toFixed(2)} ({isPositive ? "+" : ""}{legend.changePct.toFixed(2)}%)
+            </span>
+            {legend.volume > 0 && (
+              <span className="text-[#787b86]">Vol <span className="text-[#d1d4dc]">{formatVol(legend.volume)}</span></span>
+            )}
           </div>
-        </div>
-        <div className="flex gap-2 mt-1">
-          <Button
-            variant={showRSI ? "secondary" : "ghost"}
-            size="sm"
-            className="h-6 px-2 text-xs"
-            onClick={() => setShowRSI(!showRSI)}
-          >
-            RSI
-          </Button>
-          <Button
-            variant={showMACD ? "secondary" : "ghost"}
-            size="sm"
-            className="h-6 px-2 text-xs"
-            onClick={() => setShowMACD(!showMACD)}
-          >
-            MACD
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="p-0">
+        )}
+
+        {/* Main chart */}
         <div ref={mainChartRef} />
-        {showRSI && <div ref={rsiChartRef} className="border-t border-border" />}
-        {showMACD && <div ref={macdChartRef} className="border-t border-border" />}
-      </CardContent>
-    </Card>
+      </div>
+
+      {/* RSI sub-chart */}
+      {showRSI && (
+        <div className="relative">
+          <div className="absolute top-1 left-3 z-10 text-[10px] pointer-events-none" style={{ color: "#b39ddb" }}>
+            RSI(14)
+          </div>
+          <div ref={rsiChartRef} style={{ borderTop: `1px solid ${BORDER_COLOR}` }} />
+        </div>
+      )}
+
+      {/* MACD sub-chart */}
+      {showMACD && (
+        <div className="relative">
+          <div className="absolute top-1 left-3 z-10 text-[10px] pointer-events-none flex gap-3">
+            <span style={{ color: "#2196f3" }}>MACD(12,26,9)</span>
+            <span style={{ color: "#ff9800" }}>Signal</span>
+          </div>
+          <div ref={macdChartRef} style={{ borderTop: `1px solid ${BORDER_COLOR}` }} />
+        </div>
+      )}
+    </div>
   )
 }

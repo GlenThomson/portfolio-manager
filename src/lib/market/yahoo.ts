@@ -41,11 +41,13 @@ export async function getMultipleQuotes(symbols: string[]) {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function getChart(symbol: string, period1: string, interval: string = "1d") {
-  const result: any = await yahooFinance.chart(symbol, {
+export async function getChart(symbol: string, period1: string, interval: string = "1d", period2?: string) {
+  const opts: any = {
     period1,
     interval: interval as "1d" | "1wk" | "1mo" | "5m" | "15m" | "1h",
-  })
+  }
+  if (period2) opts.period2 = period2
+  const result: any = await yahooFinance.chart(symbol, opts)
 
   return (result.quotes ?? []).map((q: any) => ({
     time: Math.floor(new Date(q.date).getTime() / 1000),
