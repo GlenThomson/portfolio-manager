@@ -18,8 +18,15 @@ interface Portfolio {
   created_at: string
 }
 
+interface PortfolioSummary {
+  positionCount: number
+  totalValue: number
+  cashTotal: number
+}
+
 export default function PortfoliosPage() {
   const [portfolios, setPortfolios] = useState<Portfolio[]>([])
+  const [summaries, setSummaries] = useState<Record<string, PortfolioSummary>>({})
   const [newName, setNewName] = useState("")
   const [isPaper, setIsPaper] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -36,7 +43,35 @@ export default function PortfoliosPage() {
       .select("*")
       .order("created_at", { ascending: false })
 
-    setPortfolios(data ?? [])
+    const portfolioList = data ?? []
+    setPortfolios(portfolioList)
+
+    // Fetch position summaries for each portfolio
+    if (portfolioList.length > 0) {
+      const ids = portfolioList.map((p) => p.id)
+      const { data: positions } = await supabase
+        .from("portfolio_positions")
+        .select("portfolio_id, quantity, average_cost, asset_type")
+        .in("portfolio_id", ids)
+        .is("closed_at", null)
+
+      const sums: Record<string, PortfolioSummary> = {}
+      for (const p of portfolioList) {
+        sums[p.id] = { positionCount: 0, totalValue: 0, cashTotal: 0 }
+      }
+      for (const pos of positions ?? []) {
+        const s = sums[pos.portfolio_id]
+        if (!s) continue
+        if (pos.asset_type === "cash") {
+          s.cashTotal += parseFloat(pos.average_cost)
+        } else {
+          s.positionCount++
+          s.totalValue += parseFloat(pos.quantity) * parseFloat(pos.average_cost)
+        }
+      }
+      setSummaries(sums)
+    }
+
     setLoading(false)
   }
 
@@ -149,8 +184,19 @@ export default function PortfoliosPage() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-2xl font-bold">$0.00</p>
-                  <p className="text-sm text-muted-foreground">0 positions</p>
+                  {(() => {
+                    const s = summaries[portfolio.id]
+                    const total = (s?.totalValue ?? 0) + (s?.cashTotal ?? 0)
+                    return (
+                      <>
+                        <p className="text-2xl font-bold">${total.toFixed(2)}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {s?.positionCount ?? 0} position{(s?.positionCount ?? 0) !== 1 ? "s" : ""}
+                          {(s?.cashTotal ?? 0) > 0 && ` · $${s!.cashTotal.toFixed(2)} cash`}
+                        </p>
+                      </>
+                    )
+                  })()}
                 </CardContent>
               </Card>
             </Link>

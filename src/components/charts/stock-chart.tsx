@@ -119,6 +119,12 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
   const [indicators, setIndicators] = useState<Indicator[]>(DEFAULT_INDICATORS)
   const [legend, setLegend] = useState<OHLCLegend | null>(null)
   const [showIndicatorMenu, setShowIndicatorMenu] = useState(false)
+  const [logScale, setLogScale] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("chart-log-scale") === "true"
+    }
+    return false
+  })
   const menuRef = useRef<HTMLDivElement>(null)
 
   // Stable refs for callbacks (avoid putting these in effect deps)
@@ -174,6 +180,14 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
 
   const toggleIndicator = useCallback((id: string) => {
     setIndicators((prev) => prev.map((ind) => ind.id === id ? { ...ind, active: !ind.active } : ind))
+  }, [])
+
+  const toggleLogScale = useCallback(() => {
+    setLogScale((prev) => {
+      const next = !prev
+      localStorage.setItem("chart-log-scale", String(next))
+      return next
+    })
   }, [])
 
   // ── Shared: populate all series from current data ──────
@@ -274,6 +288,7 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
       rightPriceScale: {
         borderColor: BORDER_COLOR,
         scaleMargins: { top: 0.05, bottom: 0.05 },
+        mode: logScale ? 1 : 0, // 0 = Normal, 1 = Logarithmic
       },
       timeScale: {
         borderColor: BORDER_COLOR,
@@ -494,7 +509,7 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
       macdChart?.remove()
       chartsRef.current = { main: null, rsi: null, macd: null, series: {} }
     }
-  }, [indicators, showRSI, showMACD, populateAllSeries])
+  }, [indicators, showRSI, showMACD, logScale, populateAllSeries])
 
   // ── Effect 2: Data update (in-place, no chart recreation) ──
   // Runs when data prop changes. Updates series data without touching the chart.
@@ -606,6 +621,20 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
             </div>
           )}
         </div>
+
+        <div className="w-px h-4 mx-1" style={{ background: BORDER_COLOR }} />
+
+        {/* Log scale toggle */}
+        <button
+          onClick={toggleLogScale}
+          className={cn(
+            "px-2 py-1 text-xs font-medium rounded transition-colors",
+            logScale ? "bg-[#2962ff] text-white" : "text-[#787b86] hover:text-[#d1d4dc]"
+          )}
+          title="Logarithmic scale"
+        >
+          Log
+        </button>
 
         {/* Active indicator pills */}
         <div className="flex gap-1 ml-1">

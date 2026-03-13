@@ -13,10 +13,11 @@ import { relations } from "drizzle-orm"
 // ── Enums ──────────────────────────────────────────────
 
 export const planEnum = pgEnum("plan", ["free", "pro", "enterprise"])
-export const assetTypeEnum = pgEnum("asset_type", ["stock", "etf", "crypto", "option", "bond", "other"])
+export const assetTypeEnum = pgEnum("asset_type", ["stock", "etf", "crypto", "option", "bond", "other", "cash"])
 export const transactionActionEnum = pgEnum("transaction_action", ["buy", "sell", "dividend", "split"])
 export const chatRoleEnum = pgEnum("chat_role", ["user", "assistant", "system"])
 export const alertConditionEnum = pgEnum("alert_condition", ["above", "below", "pct_change"])
+export const brokerEnum = pgEnum("broker", ["ibkr", "sharesies"])
 
 // ── User Profiles ──────────────────────────────────────
 
@@ -92,6 +93,20 @@ export const transactionRelations = relations(transactions, ({ one }) => ({
     references: [portfolios.id],
   }),
 }))
+
+// ── Broker Connections ────────────────────────────────
+
+export const brokerConnections = pgTable("broker_connections", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull(),
+  broker: brokerEnum("broker").notNull(),
+  accessToken: text("access_token"),
+  refreshToken: text("refresh_token"),
+  tokenExpiresAt: timestamp("token_expires_at"),
+  accountId: text("account_id"),
+  lastSyncAt: timestamp("last_sync_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+})
 
 // ── Watchlists ─────────────────────────────────────────
 

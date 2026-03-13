@@ -17,8 +17,10 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Plus, TrendingUp, TrendingDown, DollarSign, Briefcase } from "lucide-react"
+import { Plus, TrendingUp, TrendingDown, DollarSign, Briefcase, Upload, Wallet } from "lucide-react"
 import Link from "next/link"
+import { useSearchParams } from "next/navigation"
+import { BrokerConnectDialog } from "@/components/portfolio/broker-connect"
 
 interface Position {
   id: string
@@ -43,12 +45,32 @@ export default function PortfolioDetailPage() {
   const [positions, setPositions] = useState<Position[]>([])
   const [quotes, setQuotes] = useState<Record<string, { price: number; change: number; changePct: number }>>({})
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [importDialogOpen, setImportDialogOpen] = useState(false)
+  const [ibkrConnected, setIbkrConnected] = useState(false)
   const [form, setForm] = useState<TransactionForm>({ symbol: "", action: "buy", quantity: "", price: "" })
   const [loading, setLoading] = useState(true)
+  const searchParams = useSearchParams()
 
   useEffect(() => {
     fetchData()
+    // Check if IBKR is connected
+    const supabase = createClient()
+    supabase
+      .from("broker_connections")
+      .select("id")
+      .eq("broker", "ibkr")
+      .limit(1)
+      .single()
+      .then(({ data }) => { if (data) setIbkrConnected(true) })
   }, [portfolioId])
+
+  useEffect(() => {
+    // Auto-open import dialog after IBKR OAuth callback
+    if (searchParams.get("ibkr") === "connected") {
+      setIbkrConnected(true)
+      setImportDialogOpen(true)
+    }
+  }, [searchParams])
 
   useEffect(() => {
     if (positions.length > 0) {
@@ -70,7 +92,8 @@ export default function PortfolioDetailPage() {
   }
 
   async function fetchQuotes() {
-    const symbols = positions.map((p) => p.symbol).join(",")
+    const symbols = positions.filter((p) => p.asset_type !== "cash").map((p) => p.symbol).join(",")
+    if (!symbols) return
     try {
       const res = await fetch(`/api/market/quote?symbols=${symbols}`)
       if (res.ok) {
@@ -155,19 +178,28 @@ export default function PortfolioDetailPage() {
     fetchData()
   }
 
-  // Calculate totals
-  const totalValue = positions.reduce((sum, p) => {
+  // Split positions into stocks and cash
+  const stockPositions = positions.filter((p) => p.asset_type !== "cash")
+  const cashPositions = positions.filter((p) => p.asset_type === "cash")
+
+  // Calculate totals (stocks only — cash is separate)
+  const totalValue = stockPositions.reduce((sum, p) => {
     const q = quotes[p.symbol]
     return sum + (q ? q.price * parseFloat(p.quantity) : 0)
   }, 0)
 
-  const totalCost = positions.reduce(
+  const totalCost = stockPositions.reduce(
     (sum, p) => sum + parseFloat(p.average_cost) * parseFloat(p.quantity),
     0
   )
 
   const totalPnl = totalValue - totalCost
   const totalPnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0
+
+  const totalCash = cashPositions.reduce(
+    (sum, p) => sum + parseFloat(p.average_cost),
+    0
+  )
 
   if (loading) {
     return <div className="animate-pulse h-96 bg-muted rounded-lg" />
@@ -186,13 +218,18 @@ export default function PortfolioDetailPage() {
             )}
           </h1>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Transaction
-            </Button>
-          </DialogTrigger>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
+            <Upload className="mr-2 h-4 w-4" />
+            Import Holdings
+          </Button>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Transaction
+              </Button>
+            </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Add Transaction</DialogTitle>
@@ -258,10 +295,19 @@ export default function PortfolioDetailPage() {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
+
+        <BrokerConnectDialog
+          open={importDialogOpen}
+          onOpenChange={setImportDialogOpen}
+          portfolioId={portfolioId}
+          onImportComplete={fetchData}
+          ibkrConnected={ibkrConnected}
+        />
       </div>
 
       {/* Summary cards */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Market Value</CardTitle>
@@ -289,19 +335,33 @@ export default function PortfolioDetailPage() {
             </p>
           </CardContent>
         </Card>
+        {cashPositions.length > 0 && (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Cash</CardTitle>
+              <Wallet className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">${totalCash.toFixed(2)}</div>
+              <p className="text-xs text-muted-foreground">
+                {cashPositions.length} currenc{cashPositions.length === 1 ? "y" : "ies"}
+              </p>
+            </CardContent>
+          </Card>
+        )}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Positions</CardTitle>
             <Briefcase className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{positions.length}</div>
+            <div className="text-2xl font-bold">{stockPositions.length}</div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Positions table */}
-      {positions.length === 0 ? (
+      {/* Stock Positions table */}
+      {stockPositions.length === 0 && cashPositions.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
             <p className="text-muted-foreground mb-4">No positions yet. Add your first transaction.</p>
@@ -311,7 +371,7 @@ export default function PortfolioDetailPage() {
             </Button>
           </CardContent>
         </Card>
-      ) : (
+      ) : stockPositions.length > 0 ? (
         <Card>
           <CardContent className="p-0">
             <Table>
@@ -327,7 +387,7 @@ export default function PortfolioDetailPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {positions.map((pos) => {
+                {stockPositions.map((pos) => {
                   const qty = parseFloat(pos.quantity)
                   const avgCost = parseFloat(pos.average_cost)
                   const q = quotes[pos.symbol]
@@ -372,6 +432,46 @@ export default function PortfolioDetailPage() {
                     </TableRow>
                   )
                 })}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {/* Cash Holdings */}
+      {cashPositions.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Wallet className="h-4 w-4" />
+              Cash Holdings
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Currency</TableHead>
+                  <TableHead className="text-right">Balance</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {cashPositions.map((pos) => {
+                  const balance = parseFloat(pos.average_cost)
+                  const currency = pos.symbol.replace("-CASH", "")
+                  return (
+                    <TableRow key={pos.id}>
+                      <TableCell className="font-medium">{currency}</TableCell>
+                      <TableCell className="text-right">${balance.toFixed(2)}</TableCell>
+                    </TableRow>
+                  )
+                })}
+                {cashPositions.length > 1 && (
+                  <TableRow className="font-medium">
+                    <TableCell>Total</TableCell>
+                    <TableCell className="text-right">${totalCash.toFixed(2)}</TableCell>
+                  </TableRow>
+                )}
               </TableBody>
             </Table>
           </CardContent>
