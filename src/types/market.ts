@@ -13,6 +13,10 @@ export interface Quote {
   fiftyTwoWeekHigh: number
   fiftyTwoWeekLow: number
   currency: string
+  trailingPE: number | null
+  epsTrailingTwelveMonths: number | null
+  dividendYield: number | null
+  beta: number | null
 }
 
 export interface OHLC {
