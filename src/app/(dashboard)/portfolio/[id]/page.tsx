@@ -31,9 +31,17 @@ interface Position {
   opened_at: string
 }
 
+interface DividendTransaction {
+  id: string
+  symbol: string
+  quantity: string
+  price: string
+  executed_at: string
+}
+
 interface TransactionForm {
   symbol: string
-  action: "buy" | "sell"
+  action: "buy" | "sell" | "dividend"
   quantity: string
   price: string
 }
@@ -43,6 +51,7 @@ export default function PortfolioDetailPage() {
   const portfolioId = params.id as string
   const [portfolio, setPortfolio] = useState<{ name: string; is_paper: boolean } | null>(null)
   const [positions, setPositions] = useState<Position[]>([])
+  const [dividends, setDividends] = useState<DividendTransaction[]>([])
   const [quotes, setQuotes] = useState<Record<string, { price: number; change: number; changePct: number }>>({})
   const [dialogOpen, setDialogOpen] = useState(false)
   const [importDialogOpen, setImportDialogOpen] = useState(false)
@@ -89,13 +98,15 @@ export default function PortfolioDetailPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
-    const [portfolioRes, positionsRes] = await Promise.all([
+    const [portfolioRes, positionsRes, dividendsRes] = await Promise.all([
       supabase.from("portfolios").select("name, is_paper").eq("id", portfolioId).eq("user_id", user.id).single(),
       supabase.from("portfolio_positions").select("*").eq("portfolio_id", portfolioId).eq("user_id", user.id).is("closed_at", null),
+      supabase.from("transactions").select("id, symbol, quantity, price, executed_at").eq("portfolio_id", portfolioId).eq("user_id", user.id).eq("action", "dividend").order("executed_at", { ascending: false }),
     ])
 
     setPortfolio(portfolioRes.data)
     setPositions(positionsRes.data ?? [])
+    setDividends(dividendsRes.data ?? [])
     setLoading(false)
   }
 
@@ -139,46 +150,49 @@ export default function PortfolioDetailPage() {
       price: price.toString(),
     })
 
-    // Update or create position
-    const existingPosition = positions.find((p) => p.symbol === symbol)
+    // Dividends don't change position quantity
+    if (form.action !== "dividend") {
+      // Update or create position
+      const existingPosition = positions.find((p) => p.symbol === symbol)
 
-    if (existingPosition && form.action === "buy") {
-      const oldQty = parseFloat(existingPosition.quantity)
-      const oldCost = parseFloat(existingPosition.average_cost)
-      const newQty = oldQty + quantity
-      const newAvgCost = (oldQty * oldCost + quantity * price) / newQty
+      if (existingPosition && form.action === "buy") {
+        const oldQty = parseFloat(existingPosition.quantity)
+        const oldCost = parseFloat(existingPosition.average_cost)
+        const newQty = oldQty + quantity
+        const newAvgCost = (oldQty * oldCost + quantity * price) / newQty
 
-      await supabase
-        .from("portfolio_positions")
-        .update({
-          quantity: newQty.toString(),
-          average_cost: newAvgCost.toString(),
+        await supabase
+          .from("portfolio_positions")
+          .update({
+            quantity: newQty.toString(),
+            average_cost: newAvgCost.toString(),
+          })
+          .eq("id", existingPosition.id)
+      } else if (existingPosition && form.action === "sell") {
+        const oldQty = parseFloat(existingPosition.quantity)
+        const newQty = oldQty - quantity
+
+        if (newQty <= 0) {
+          await supabase
+            .from("portfolio_positions")
+            .update({ quantity: "0", closed_at: new Date().toISOString() })
+            .eq("id", existingPosition.id)
+        } else {
+          await supabase
+            .from("portfolio_positions")
+            .update({ quantity: newQty.toString() })
+            .eq("id", existingPosition.id)
+        }
+      } else if (form.action === "buy") {
+        await supabase.from("portfolio_positions").insert({
+          portfolio_id: portfolioId,
+          user_id: userId,
+          symbol,
+          quantity: quantity.toString(),
+          average_cost: price.toString(),
+          asset_type: "stock",
         })
-        .eq("id", existingPosition.id)
-    } else if (existingPosition && form.action === "sell") {
-      const oldQty = parseFloat(existingPosition.quantity)
-      const newQty = oldQty - quantity
-
-      if (newQty <= 0) {
-        await supabase
-          .from("portfolio_positions")
-          .update({ quantity: "0", closed_at: new Date().toISOString() })
-          .eq("id", existingPosition.id)
-      } else {
-        await supabase
-          .from("portfolio_positions")
-          .update({ quantity: newQty.toString() })
-          .eq("id", existingPosition.id)
       }
-    } else if (form.action === "buy") {
-      await supabase.from("portfolio_positions").insert({
-        portfolio_id: portfolioId,
-        user_id: userId,
-        symbol,
-        quantity: quantity.toString(),
-        average_cost: price.toString(),
-        asset_type: "stock",
-      })
     }
 
     setForm({ symbol: "", action: "buy", quantity: "", price: "" })
@@ -208,6 +222,31 @@ export default function PortfolioDetailPage() {
     (sum, p) => sum + parseFloat(p.average_cost),
     0
   )
+
+  // Dividend calculations
+  const totalDividends = dividends.reduce(
+    (sum, d) => sum + parseFloat(d.quantity) * parseFloat(d.price),
+    0
+  )
+
+  const currentYear = new Date().getFullYear()
+  const dividendsThisYear = dividends
+    .filter((d) => new Date(d.executed_at).getFullYear() === currentYear)
+    .reduce((sum, d) => sum + parseFloat(d.quantity) * parseFloat(d.price), 0)
+
+  const dividendYield = totalCost > 0 ? (totalDividends / totalCost) * 100 : 0
+
+  // Group dividends by year
+  const dividendsByYear = dividends.reduce<Record<number, DividendTransaction[]>>((acc, d) => {
+    const year = new Date(d.executed_at).getFullYear()
+    if (!acc[year]) acc[year] = []
+    acc[year].push(d)
+    return acc
+  }, {})
+
+  const sortedYears = Object.keys(dividendsByYear)
+    .map(Number)
+    .sort((a, b) => b - a)
 
   if (loading) {
     return <div className="animate-pulse h-96 bg-muted rounded-lg" />
@@ -272,34 +311,51 @@ export default function PortfolioDetailPage() {
                   >
                     Sell
                   </Button>
+                  <Button
+                    type="button"
+                    variant={form.action === "dividend" ? "default" : "outline"}
+                    className="flex-1"
+                    onClick={() => setForm({ ...form, action: "dividend" })}
+                  >
+                    Dividend
+                  </Button>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Quantity</label>
+                  <label className="text-sm font-medium">
+                    {form.action === "dividend" ? "Shares (receiving)" : "Quantity"}
+                  </label>
                   <Input
                     type="number"
                     step="any"
-                    placeholder="10"
+                    placeholder={form.action === "dividend" ? "100" : "10"}
                     value={form.quantity}
                     onChange={(e) => setForm({ ...form, quantity: e.target.value })}
                     required
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Price per share</label>
+                  <label className="text-sm font-medium">
+                    {form.action === "dividend" ? "Per-share amount" : "Price per share"}
+                  </label>
                   <Input
                     type="number"
                     step="any"
-                    placeholder="150.00"
+                    placeholder={form.action === "dividend" ? "0.82" : "150.00"}
                     value={form.price}
                     onChange={(e) => setForm({ ...form, price: e.target.value })}
                     required
                   />
                 </div>
               </div>
+              {form.action === "dividend" && (
+                <p className="text-xs text-muted-foreground">
+                  Total dividend: ${form.quantity && form.price ? (parseFloat(form.quantity) * parseFloat(form.price)).toFixed(2) : "0.00"}
+                </p>
+              )}
               <Button type="submit" className="w-full">
-                {form.action === "buy" ? "Buy" : "Sell"} Shares
+                {form.action === "buy" ? "Buy Shares" : form.action === "sell" ? "Sell Shares" : "Record Dividend"}
               </Button>
             </form>
           </DialogContent>
@@ -369,6 +425,34 @@ export default function PortfolioDetailPage() {
         </Card>
       </div>
 
+      {/* Dividend Summary Card */}
+      {dividends.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <DollarSign className="h-4 w-4" />
+              Dividend Summary
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 md:grid-cols-3">
+              <div>
+                <p className="text-sm text-muted-foreground">Total Dividends (All Time)</p>
+                <p className="text-2xl font-bold text-green-500">${totalDividends.toFixed(2)}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Dividends This Year</p>
+                <p className="text-2xl font-bold">${dividendsThisYear.toFixed(2)}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Dividend Yield (on Cost)</p>
+                <p className="text-2xl font-bold">{dividendYield.toFixed(2)}%</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Stock Positions table */}
       {stockPositions.length === 0 && cashPositions.length === 0 ? (
         <Card>
@@ -431,10 +515,10 @@ export default function PortfolioDetailPage() {
                       <TableCell className="text-right">{qty}</TableCell>
                       <TableCell className="text-right">${avgCost.toFixed(2)}</TableCell>
                       <TableCell className="text-right">
-                        {price > 0 ? `$${price.toFixed(2)}` : "—"}
+                        {price > 0 ? `$${price.toFixed(2)}` : "\u2014"}
                       </TableCell>
                       <TableCell className="text-right">
-                        {price > 0 ? `$${marketValue.toFixed(2)}` : "—"}
+                        {price > 0 ? `$${marketValue.toFixed(2)}` : "\u2014"}
                       </TableCell>
                       <TableCell className={`text-right ${pnl >= 0 ? "text-green-500" : "text-red-500"}`}>
                         {price > 0 ? (
@@ -445,14 +529,14 @@ export default function PortfolioDetailPage() {
                               {pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(2)}%
                             </span>
                           </>
-                        ) : "—"}
+                        ) : "\u2014"}
                       </TableCell>
                       <TableCell className={`text-right ${(q?.change ?? 0) >= 0 ? "text-green-500" : "text-red-500"}`}>
                         {q ? (
                           <>
                             {q.change >= 0 ? "+" : ""}{q.changePct.toFixed(2)}%
                           </>
-                        ) : "—"}
+                        ) : "\u2014"}
                       </TableCell>
                     </TableRow>
                   )
@@ -502,6 +586,64 @@ export default function PortfolioDetailPage() {
               </TableBody>
             </Table>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Dividend History */}
+      {dividends.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <DollarSign className="h-4 w-4" />
+              Dividend History
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Symbol</TableHead>
+                  <TableHead className="text-right">Per Share</TableHead>
+                  <TableHead className="text-right">Shares</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sortedYears.map((year) => {
+                  const yearDividends = dividendsByYear[year]
+                  const yearTotal = yearDividends.reduce(
+                    (sum, d) => sum + parseFloat(d.quantity) * parseFloat(d.price),
+                    0
+                  )
+                  return (
+                    <>{/* Fragment per year */}
+                      <TableRow key={`year-${year}`} className="bg-muted/50">
+                        <TableCell colSpan={4} className="font-semibold">{year}</TableCell>
+                        <TableCell className="text-right font-semibold text-green-500">
+                          ${yearTotal.toFixed(2)}
+                        </TableCell>
+                      </TableRow>
+                      {yearDividends.map((d) => {
+                        const amount = parseFloat(d.quantity) * parseFloat(d.price)
+                        return (
+                          <TableRow key={d.id}>
+                            <TableCell className="text-muted-foreground">
+                              {new Date(d.executed_at).toLocaleDateString()}
+                            </TableCell>
+                            <TableCell className="font-medium">{d.symbol}</TableCell>
+                            <TableCell className="text-right">${parseFloat(d.price).toFixed(4)}</TableCell>
+                            <TableCell className="text-right">{parseFloat(d.quantity)}</TableCell>
+                            <TableCell className="text-right text-green-500">${amount.toFixed(2)}</TableCell>
+                          </TableRow>
+                        )
+                      })}
+                    </>
+                  )
+                })}
+              </TableBody>
+            </Table>
           </CardContent>
         </Card>
       )}
