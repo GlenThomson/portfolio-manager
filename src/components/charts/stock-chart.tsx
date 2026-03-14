@@ -527,7 +527,12 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
         setContextMenu({ x: e.clientX - rect.left, y: e.clientY - rect.top, price: Math.round(price * 100) / 100 })
       }
     }
-    const handleClick = () => setContextMenu(null)
+    const handleClick = (e: MouseEvent) => {
+      // Don't dismiss if clicking inside the context menu
+      const target = e.target as HTMLElement
+      if (target.closest("[data-alert-menu]")) return
+      setContextMenu(null)
+    }
     container.addEventListener("contextmenu", handleContextMenu)
     container.addEventListener("click", handleClick)
 
@@ -760,6 +765,7 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
         {/* Right-click context menu */}
         {contextMenu && (
           <div
+            data-alert-menu
             className="absolute z-50 rounded-md shadow-xl py-1 min-w-[200px]"
             style={{
               left: contextMenu.x,
@@ -767,8 +773,6 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
               background: "#1e222d",
               border: `1px solid ${BORDER_COLOR}`,
             }}
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
           >
             {onCreateAlert && (
               <button
