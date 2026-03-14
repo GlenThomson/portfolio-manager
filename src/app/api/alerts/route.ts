@@ -77,6 +77,50 @@ export async function POST(request: NextRequest) {
   return NextResponse.json(data, { status: 201 })
 }
 
+export async function PATCH(request: NextRequest) {
+  const supabase = createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  const body = await request.json()
+  const { id, condition_value } = body
+
+  if (!id || condition_value === undefined) {
+    return NextResponse.json({ error: "id and condition_value are required" }, { status: 400 })
+  }
+
+  // Verify ownership
+  const { data: existing } = await supabase
+    .from("alerts")
+    .select("id")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .single()
+
+  if (!existing) {
+    return NextResponse.json({ error: "Alert not found" }, { status: 404 })
+  }
+
+  const { data, error } = await supabase
+    .from("alerts")
+    .update({
+      condition_value: parseFloat(condition_value),
+    })
+    .eq("id", id)
+    .select()
+    .single()
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  return NextResponse.json(data)
+}
+
 export async function DELETE(request: NextRequest) {
   const supabase = createClient()
   const {

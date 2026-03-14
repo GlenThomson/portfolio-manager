@@ -87,6 +87,7 @@ interface StockChartProps {
   onLoadMore?: (beforeTimestamp: number) => void
   onCreateAlert?: (symbol: string, price: number, condition: "above" | "below") => void
   onRemoveAlert?: (alertId: string) => void
+  onMoveAlert?: (alertId: string, newPrice: number) => void
   alerts?: ChartAlert[]
 }
 
@@ -121,7 +122,7 @@ function filterClean(data: OHLC[]): OHLC[] {
 
 // ── Component ────────────────────────────────────────────
 
-export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoadMore, onCreateAlert, onRemoveAlert, alerts = [] }: StockChartProps) {
+export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoadMore, onCreateAlert, onRemoveAlert, onMoveAlert, alerts = [] }: StockChartProps) {
   const mainChartRef = useRef<HTMLDivElement>(null)
   const rsiChartRef = useRef<HTMLDivElement>(null)
   const macdChartRef = useRef<HTMLDivElement>(null)
@@ -132,6 +133,7 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
   const [toast, setToast] = useState<string | null>(null)
   const [alertCoords, setAlertCoords] = useState<Array<{ id: string; price: number; y: number }>>([])
   const alertUpdateTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [draggingAlert, setDraggingAlert] = useState<{ id: string; startY: number; currentY: number } | null>(null)
   const [logScale, setLogScale] = useState(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("chart-log-scale") === "true"
@@ -784,28 +786,75 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
           </div>
         )}
 
-        {/* Alert line delete buttons — hover the line area to reveal */}
-        {alertCoords.map((ac) => (
-          <div
-            key={ac.id}
-            className="absolute right-0 z-20 group flex items-center justify-end pr-14"
-            style={{ top: ac.y - 12, height: 24, left: 0 }}
-          >
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                onRemoveAlert?.(ac.id)
-                setToast(`Alert at $${ac.price.toFixed(2)} removed`)
-                setTimeout(() => setToast(null), 2000)
+        {/* Alert line overlays — hover to reveal delete, drag to move */}
+        {alertCoords.map((ac) => {
+          const isDragging = draggingAlert?.id === ac.id
+          const displayY = isDragging ? draggingAlert.currentY : ac.y
+          return (
+            <div
+              key={ac.id}
+              className="absolute right-0 z-20 group flex items-center justify-end pr-14"
+              style={{
+                top: displayY - 12,
+                height: 24,
+                left: 0,
+                cursor: isDragging ? "grabbing" : "grab",
               }}
-              className="opacity-0 group-hover:opacity-100 transition-opacity h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-bold cursor-pointer"
-              style={{ background: "#ef5350", color: "#fff" }}
-              title={`Remove alert at $${ac.price.toFixed(2)}`}
+              onMouseDown={(e) => {
+                if (e.button !== 0) return // left click only
+                e.preventDefault()
+                const startY = e.clientY
+                const offsetY = ac.y
+
+                setDraggingAlert({ id: ac.id, startY, currentY: offsetY })
+
+                const onMouseMove = (ev: MouseEvent) => {
+                  const newY = offsetY + (ev.clientY - startY)
+                  setDraggingAlert({ id: ac.id, startY, currentY: newY })
+                }
+
+                const onMouseUp = (ev: MouseEvent) => {
+                  document.removeEventListener("mousemove", onMouseMove)
+                  document.removeEventListener("mouseup", onMouseUp)
+                  const finalY = offsetY + (ev.clientY - startY)
+                  // Convert y back to price
+                  const { series } = chartsRef.current
+                  const candleSeries = series["candle"]
+                  if (candleSeries && onMoveAlert) {
+                    const newPrice = candleSeries.coordinateToPrice(finalY)
+                    if (typeof newPrice === "number" && newPrice > 0) {
+                      onMoveAlert(ac.id, Math.round(newPrice * 100) / 100)
+                    }
+                  }
+                  setDraggingAlert(null)
+                }
+
+                document.addEventListener("mousemove", onMouseMove)
+                document.addEventListener("mouseup", onMouseUp)
+              }}
             >
-              ✕
-            </button>
-          </div>
-        ))}
+              {isDragging && (
+                <span className="text-[10px] font-mono mr-2" style={{ color: "#ff9800" }}>
+                  ${(chartsRef.current.series["candle"]?.coordinateToPrice(displayY) ?? 0).toFixed(2)}
+                </span>
+              )}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onRemoveAlert?.(ac.id)
+                  setToast(`Alert removed`)
+                  setTimeout(() => setToast(null), 2000)
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                className="opacity-0 group-hover:opacity-100 transition-opacity h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-bold cursor-pointer"
+                style={{ background: "#ef5350", color: "#fff" }}
+                title={`Remove alert at $${ac.price.toFixed(2)}`}
+              >
+                ✕
+              </button>
+            </div>
+          )
+        })}
 
         {/* Toast notification */}
         {toast && (

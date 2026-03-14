@@ -65,6 +65,15 @@ export default function StockDetailPage() {
       .then((r) => r.ok ? r.json() : null)
       .then((data) => { if (data) setQuote(data) })
       .catch(() => {})
+
+    // Poll quote every 15s for intraday
+    const quoteInterval = setInterval(() => {
+      fetch(`/api/market/quote?symbols=${symbol}`)
+        .then((r) => r.ok ? r.json() : null)
+        .then((data) => { if (data) setQuote(data) })
+        .catch(() => {})
+    }, 15000)
+    return () => clearInterval(quoteInterval)
   }, [symbol])
 
   useEffect(() => {
@@ -74,6 +83,34 @@ export default function StockDetailPage() {
       .then((data) => setChartData(data))
       .catch(() => {})
       .finally(() => setLoading(false))
+
+    // Poll chart data for intraday intervals
+    const isIntraday = ["1m", "5m", "15m", "1h"].includes(activeInterval)
+    if (!isIntraday) return
+
+    const pollMs = activeInterval === "1m" ? 10000 : activeInterval === "5m" ? 30000 : 60000
+    const chartInterval = setInterval(() => {
+      fetch(`/api/market/chart?symbol=${symbol}&period=${activePeriod}&interval=${activeInterval}`)
+        .then((r) => r.ok ? r.json() : null)
+        .then((newData: OHLC[] | null) => {
+          if (!newData || newData.length === 0) return
+          setChartData((prev) => {
+            // Merge: update last candle if same timestamp, append if new
+            const merged = [...prev]
+            for (const candle of newData) {
+              const idx = merged.findIndex((d) => d.time === candle.time)
+              if (idx >= 0) {
+                merged[idx] = candle // update existing candle
+              } else {
+                merged.push(candle)
+              }
+            }
+            return merged.sort((a, b) => a.time - b.time)
+          })
+        })
+        .catch(() => {})
+    }, pollMs)
+    return () => clearInterval(chartInterval)
   }, [symbol, activePeriod, activeInterval])
 
   useEffect(() => {
@@ -147,6 +184,20 @@ export default function StockDetailPage() {
     }
   }
 
+  async function handleMoveAlert(alertId: string, newPrice: number) {
+    // Optimistically update local state
+    setAlerts((prev) => prev.map((a) => a.id === alertId ? { ...a, price: newPrice } : a))
+    try {
+      await fetch("/api/alerts", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: alertId, condition_value: newPrice }),
+      })
+    } catch {
+      // ignore
+    }
+  }
+
   const isPositive = (quote?.regularMarketChange ?? 0) >= 0
 
   return (
@@ -213,6 +264,7 @@ export default function StockDetailPage() {
           onLoadMore={handleLoadMore}
           onCreateAlert={handleCreateAlert}
           onRemoveAlert={handleRemoveAlert}
+          onMoveAlert={handleMoveAlert}
           alerts={alerts}
         />
       )}
