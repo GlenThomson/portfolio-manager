@@ -96,31 +96,31 @@ An AI-powered portfolio manager and investment assistant that combines real-time
 
 ## Phase Roadmap
 
-### Phase 1 — Foundation: "See Your Portfolio"
+### Phase 1 — Foundation: "See Your Portfolio" ✅ COMPLETE
 **Goal**: User can sign up, add a portfolio manually, see live charts with indicators, manage a watchlist, and chat with an AI that knows their holdings.
 
-**Prerequisites**:
-- Upgrade Node.js to v22 LTS
-- Create Supabase project + get keys
-- Get Anthropic API key
-
-**Key deliverables**:
-- Supabase auth (email + Google OAuth)
-- Dashboard layout shell (sidebar + topnav, dark theme)
-- Stock detail page with interactive candlestick chart (200/50 DMA overlay)
-- RSI + MACD indicator panes
-- Watchlist with live quotes + sparklines
-- Manual portfolio entry with positions table + transactions
-- Portfolio summary (total value, P&L, day change)
-- AI chat (portfolio-aware, streaming, can look up prices and positions)
-- Market status indicator (open/closed/pre-market/after-hours)
-
-**Does NOT include** (deferred to keep Phase 1 lean):
-- Background job queue (Upstash QStash)
-- Redis caching (use simple in-memory cache)
-- Email notifications
-- SEC filing analysis
-- Sentiment analysis
+**Delivered**:
+- ✅ Supabase auth (email + Google OAuth) with middleware protection
+- ✅ Dashboard layout shell (sidebar + topnav, dark theme)
+- ✅ Stock detail page with interactive candlestick chart (SMA/EMA/BB overlays)
+- ✅ RSI + MACD indicator panes, log scale toggle
+- ✅ Watchlist with live quotes + sparklines
+- ✅ Manual portfolio entry with positions table + transactions
+- ✅ CSV import from brokers (Sharesies, IBKR, generic) with cash column detection
+- ✅ Portfolio summary (total value, P&L, day change, best/worst performers)
+- ✅ AI chat with 6 tools (getQuote, getPortfolio, getWatchlist, analyzeStock, searchStocks, getPositionDetail)
+- ✅ Market status indicator (US NYSE + NZ NZX with holiday support and countdown)
+- ✅ Price alerts with chart right-click creation, draggable lines, email notifications via Resend
+- ✅ Settings page (profile, appearance/theme, currency, alert preferences)
+- ✅ Stock fundamentals grid (10 metrics) + news section
+- ✅ Dashboard allocation pie chart, recent transactions, top movers
+- ✅ Portfolio position detail expansion, CSV export, transaction filtering
+- ✅ Dividend tracking with income page and monthly chart
+- ✅ Stock comparison page with normalized chart and metrics table
+- ✅ Loading skeletons, error boundaries, mobile responsiveness, not-found pages
+- ✅ Row Level Security on all tables
+- ✅ Real-time chart polling for intraday timeframes
+- ✅ Intraday candle data filtering (zero-volume, date range clamping)
 
 ### Phase 2 — Market Intelligence: "Know the Market"
 - SEC EDGAR filing reader with AI summaries
@@ -128,7 +128,7 @@ An AI-powered portfolio manager and investment assistant that combines real-time
 - StockTwits + Reddit sentiment
 - Market anomaly detection (Z-score outliers)
 - Upstash Redis for caching + QStash for background jobs
-- Email alerts via Resend
+- Background alert checking (currently manual/poll-based)
 - News aggregation for watchlist stocks
 
 ### Phase 3 — AI Analyst: "Your Research Analyst"
@@ -284,8 +284,12 @@ ALPHA_VANTAGE_API_KEY=    # Phase 2+
 # Database (Supabase connection pooler)
 DATABASE_URL=
 
+# Email (Resend — alert notifications)
+RESEND_API_KEY=
+RESEND_FROM_EMAIL=        # defaults to onboarding@resend.dev
+
 # App
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 
-Note: Phase 1 only needs Supabase keys + Anthropic API key + DATABASE_URL. Other keys are added as features require them.
+Note: Phase 1 needs Supabase keys + ANTHROPIC_API_KEY + DATABASE_URL + RESEND_API_KEY (for alert emails). Other keys added as features require them.
