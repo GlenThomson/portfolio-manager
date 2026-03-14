@@ -71,6 +71,51 @@ export async function getChart(symbol: string, period1: string, interval: string
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function getQuoteSummary(symbol: string) {
+  const result: any = await yahooFinance.quoteSummary(symbol, {
+    modules: ["summaryDetail", "defaultKeyStatistics", "financialData"],
+  })
+
+  const sd = result.summaryDetail ?? {}
+  const ks = result.defaultKeyStatistics ?? {}
+  const fd = result.financialData ?? {}
+
+  return {
+    marketCap: sd.marketCap ?? 0,
+    trailingPE: sd.trailingPE ?? null,
+    forwardPE: ks.forwardPE ?? sd.forwardPE ?? null,
+    eps: ks.trailingEps ?? fd.earningsPerShare ?? null,
+    dividendYield: sd.dividendYield ?? null,
+    fiftyTwoWeekHigh: sd.fiftyTwoWeekHigh ?? 0,
+    fiftyTwoWeekLow: sd.fiftyTwoWeekLow ?? 0,
+    averageVolume: sd.averageVolume ?? 0,
+    beta: sd.beta ?? ks.beta ?? null,
+    priceToBook: ks.priceToBook ?? null,
+    priceToSalesTrailing12Months: sd.priceToSalesTrailing12Months ?? null,
+    profitMargins: ks.profitMargins ?? fd.profitMargins ?? null,
+    returnOnEquity: fd.returnOnEquity ?? null,
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function getNews(symbol: string) {
+  const result: any = await yahooFinance.search(symbol, {
+    newsCount: 10,
+    quotesCount: 0,
+  })
+
+  return (result.news ?? []).map((item: any) => ({
+    title: item.title ?? "",
+    publisher: item.publisher ?? "",
+    link: item.link ?? "",
+    publishedAt: item.providerPublishTime
+      ? new Date(item.providerPublishTime * 1000).toISOString()
+      : "",
+    thumbnail: item.thumbnail?.resolutions?.[0]?.url ?? null,
+  }))
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function searchSymbols(query: string) {
   const result: any = await yahooFinance.search(query, { quotesCount: 8 })
   return (result.quotes ?? [])

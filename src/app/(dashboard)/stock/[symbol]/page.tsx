@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback, useRef } from "react"
 import { useParams } from "next/navigation"
 import { StockChart } from "@/components/charts/stock-chart"
+import { FundamentalsGrid } from "@/components/market/fundamentals-grid"
+import { StockNews } from "@/components/market/stock-news"
 import { Button } from "@/components/ui/button"
 import { Star, Plus, Loader2 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
@@ -316,6 +318,12 @@ export default function StockDetailPage() {
           ))}
         </div>
       )}
+
+      {/* ── Fundamentals Grid ──────────────────────────────── */}
+      <FundamentalsGrid symbol={symbol} />
+
+      {/* ── News Section ───────────────────────────────────── */}
+      <StockNews symbol={symbol} />
     </div>
   )
 }
