@@ -196,7 +196,7 @@ export function TopNav() {
 function MobileSidebar() {
   return (
     <div className="flex h-full flex-col bg-card">
-      <Sidebar />
+      <Sidebar mobile />
     </div>
   )
 }

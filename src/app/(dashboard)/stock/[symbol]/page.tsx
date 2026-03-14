@@ -151,7 +151,7 @@ export default function StockDetailPage() {
 
       {/* ── Chart (hero) ────────────────────────────────────── */}
       {loading && chartData.length === 0 ? (
-        <div className="rounded-md flex items-center justify-center" style={{ background: "#131722", height: "calc(100vh - 300px)", minHeight: 400 }}>
+        <div className="rounded-md flex items-center justify-center" style={{ background: "#131722", height: "calc(100vh - 300px)", minHeight: 300 }}>
           <Loader2 className="h-6 w-6 animate-spin text-[#787b86]" />
         </div>
       ) : (

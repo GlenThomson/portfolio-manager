@@ -215,7 +215,7 @@ export default function PortfolioDetailPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">
             {portfolio?.name ?? "Portfolio"}
@@ -227,9 +227,10 @@ export default function PortfolioDetailPage() {
           </h1>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
+          <Button variant="outline" size="sm" className="sm:size-auto" onClick={() => setImportDialogOpen(true)}>
             <Upload className="mr-2 h-4 w-4" />
-            Import Holdings
+            <span className="hidden sm:inline">Import Holdings</span>
+            <span className="sm:hidden">Import</span>
           </Button>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
@@ -315,7 +316,7 @@ export default function PortfolioDetailPage() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Market Value</CardTitle>
@@ -372,16 +373,32 @@ export default function PortfolioDetailPage() {
       {stockPositions.length === 0 && cashPositions.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
-            <p className="text-muted-foreground mb-4">No positions yet. Add your first transaction.</p>
-            <Button onClick={() => setDialogOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Transaction
-            </Button>
+            <div className="rounded-full bg-muted p-4 mb-4">
+              <Briefcase className="h-8 w-8 text-muted-foreground" />
+            </div>
+            <h3 className="text-lg font-medium mb-1">No positions yet</h3>
+            <p className="text-sm text-muted-foreground mb-2">
+              Get started by adding a transaction or importing holdings from your broker.
+            </p>
+            <p className="text-xs text-muted-foreground mb-4">
+              You can manually record buys and sells, or connect a brokerage account.
+            </p>
+            <div className="flex gap-3">
+              <Button onClick={() => setDialogOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Transaction
+              </Button>
+              <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
+                <Upload className="mr-2 h-4 w-4" />
+                Import Holdings
+              </Button>
+            </div>
           </CardContent>
         </Card>
       ) : stockPositions.length > 0 ? (
         <Card>
           <CardContent className="p-0">
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -442,6 +459,7 @@ export default function PortfolioDetailPage() {
                 })}
               </TableBody>
             </Table>
+            </div>
           </CardContent>
         </Card>
       ) : null}
@@ -456,6 +474,7 @@ export default function PortfolioDetailPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -482,6 +501,7 @@ export default function PortfolioDetailPage() {
                 )}
               </TableBody>
             </Table>
+            </div>
           </CardContent>
         </Card>
       )}

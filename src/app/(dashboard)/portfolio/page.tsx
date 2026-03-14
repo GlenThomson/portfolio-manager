@@ -105,7 +105,7 @@ export default function PortfoliosPage() {
     return (
       <div className="space-y-4">
         <div className="h-8 w-48 bg-muted rounded animate-pulse" />
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-32 bg-muted rounded-lg animate-pulse" />
           ))}
@@ -161,10 +161,15 @@ export default function PortfoliosPage() {
       {portfolios.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
-            <Briefcase className="h-12 w-12 text-muted-foreground mb-4" />
+            <div className="rounded-full bg-muted p-4 mb-4">
+              <Briefcase className="h-8 w-8 text-muted-foreground" />
+            </div>
             <h3 className="text-lg font-medium mb-1">No portfolios yet</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              Create your first portfolio to start tracking investments
+            <p className="text-sm text-muted-foreground mb-1">
+              Create your first portfolio to start tracking investments.
+            </p>
+            <p className="text-xs text-muted-foreground mb-4">
+              Track real or paper portfolios, record transactions, and monitor performance.
             </p>
             <Button onClick={() => setDialogOpen(true)}>
               <Plus className="mr-2 h-4 w-4" />
@@ -173,7 +178,7 @@ export default function PortfoliosPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
           {portfolios.map((portfolio) => (
             <Link key={portfolio.id} href={`/portfolio/${portfolio.id}`}>
               <Card className="hover:bg-accent/50 transition-colors cursor-pointer">

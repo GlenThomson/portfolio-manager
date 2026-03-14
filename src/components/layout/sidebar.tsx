@@ -29,11 +29,14 @@ const secondaryItems = [
   { label: "Settings", href: "/settings", icon: Settings },
 ]
 
-export function Sidebar() {
+export function Sidebar({ mobile = false }: { mobile?: boolean }) {
   const pathname = usePathname()
 
   return (
-    <aside className="hidden md:flex h-screen w-64 flex-col border-r border-border bg-card">
+    <aside className={cn(
+      "h-screen w-64 flex-col border-r border-border bg-card",
+      mobile ? "flex" : "hidden md:flex"
+    )}>
       {/* Logo */}
       <div className="flex h-14 items-center gap-2 px-4 border-b border-border">
         <TrendingUp className="h-6 w-6 text-primary" />
