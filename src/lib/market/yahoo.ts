@@ -49,14 +49,25 @@ export async function getChart(symbol: string, period1: string, interval: string
   if (period2) opts.period2 = period2
   const result: any = await yahooFinance.chart(symbol, opts)
 
-  return (result.quotes ?? []).map((q: any) => ({
-    time: Math.floor(new Date(q.date).getTime() / 1000),
-    open: q.open ?? 0,
-    high: q.high ?? 0,
-    low: q.low ?? 0,
-    close: q.close ?? 0,
-    volume: q.volume ?? 0,
-  }))
+  const isIntraday = ["1m", "2m", "5m", "15m", "30m", "60m", "1h"].includes(interval)
+
+  return (result.quotes ?? [])
+    .filter((q: any) => {
+      // Remove candles with null/zero OHLC
+      if (q.open == null || q.high == null || q.low == null || q.close == null) return false
+      if (q.open <= 0 || q.high <= 0 || q.low <= 0 || q.close <= 0) return false
+      // For intraday: remove extended-hours candles with zero volume (garbage high/low data)
+      if (isIntraday && (q.volume == null || q.volume <= 0)) return false
+      return true
+    })
+    .map((q: any) => ({
+      time: Math.floor(new Date(q.date).getTime() / 1000),
+      open: q.open,
+      high: q.high,
+      low: q.low,
+      close: q.close,
+      volume: q.volume ?? 0,
+    }))
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
