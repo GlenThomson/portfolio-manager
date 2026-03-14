@@ -130,6 +130,8 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
   const [showIndicatorMenu, setShowIndicatorMenu] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; price: number } | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  const [alertCoords, setAlertCoords] = useState<Array<{ id: string; price: number; y: number }>>([])
+  const alertUpdateTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const [logScale, setLogScale] = useState(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("chart-log-scale") === "true"
@@ -572,6 +574,30 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
     chartsRef.current.alertLines = newLines
   }, [alerts])
 
+  // ── Effect: Update alert overlay positions ───────────────
+  useEffect(() => {
+    function updateAlertPositions() {
+      const { series } = chartsRef.current
+      const candleSeries = series["candle"]
+      if (!candleSeries || alerts.length === 0) {
+        setAlertCoords([])
+        return
+      }
+      const coords = alerts.map((a) => {
+        const y = candleSeries.priceToCoordinate(a.price)
+        return { id: a.id, price: a.price, y: typeof y === "number" ? y : -999 }
+      }).filter((c) => c.y > 0)
+      setAlertCoords(coords)
+    }
+
+    updateAlertPositions()
+    // Update positions periodically while chart is visible (handles zoom/scroll)
+    alertUpdateTimerRef.current = setInterval(updateAlertPositions, 300)
+    return () => {
+      if (alertUpdateTimerRef.current) clearInterval(alertUpdateTimerRef.current)
+    }
+  }, [alerts])
+
   // ── Effect 2: Data update (in-place, no chart recreation) ──
   // Runs when data prop changes. Updates series data without touching the chart.
   // fitContent only on fresh loads (last timestamp changed), not on prepends.
@@ -755,29 +781,36 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
                 Add alert at ${contextMenu.price.toFixed(2)}
               </button>
             )}
-            {alerts.filter((a) => Math.abs(a.price - contextMenu.price) / contextMenu.price < 0.02).map((a) => (
-              <button
-                key={a.id}
-                onClick={() => {
-                  onRemoveAlert?.(a.id)
-                  setContextMenu(null)
-                  setToast(`Alert at $${a.price.toFixed(2)} removed`)
-                  setTimeout(() => setToast(null), 2000)
-                }}
-                className="flex items-center gap-2 w-full px-3 py-2 text-xs hover:bg-[#2a2e39] transition-colors text-left"
-                style={{ color: "#ef5350" }}
-              >
-                <span className="text-sm">✕</span>
-                Remove alert at ${a.price.toFixed(2)}
-              </button>
-            ))}
           </div>
         )}
+
+        {/* Alert line delete buttons — hover the line area to reveal */}
+        {alertCoords.map((ac) => (
+          <div
+            key={ac.id}
+            className="absolute right-0 z-20 group flex items-center justify-end pr-14"
+            style={{ top: ac.y - 12, height: 24, left: 0 }}
+          >
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onRemoveAlert?.(ac.id)
+                setToast(`Alert at $${ac.price.toFixed(2)} removed`)
+                setTimeout(() => setToast(null), 2000)
+              }}
+              className="opacity-0 group-hover:opacity-100 transition-opacity h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-bold cursor-pointer"
+              style={{ background: "#ef5350", color: "#fff" }}
+              title={`Remove alert at $${ac.price.toFixed(2)}`}
+            >
+              ✕
+            </button>
+          </div>
+        ))}
 
         {/* Toast notification */}
         {toast && (
           <div
-            className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-md text-xs font-medium animate-in fade-in slide-in-from-bottom-2"
+            className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-md text-xs font-medium"
             style={{ background: "#ff9800", color: "#000" }}
           >
             {toast}
