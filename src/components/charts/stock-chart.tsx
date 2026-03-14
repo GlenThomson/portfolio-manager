@@ -767,10 +767,13 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
               background: "#1e222d",
               border: `1px solid ${BORDER_COLOR}`,
             }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
           >
             {onCreateAlert && (
               <button
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation()
                   onCreateAlert(symbol, contextMenu.price, contextMenu.price > (legend?.close ?? 0) ? "above" : "below")
                   setContextMenu(null)
                   setToast(`Alert set at $${contextMenu.price.toFixed(2)}`)
