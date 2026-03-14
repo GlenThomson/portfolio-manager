@@ -38,9 +38,13 @@ export default function PortfoliosPage() {
 
   async function fetchPortfolios() {
     const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+
     const { data } = await supabase
       .from("portfolios")
       .select("*")
+      .eq("user_id", user.id)
       .order("created_at", { ascending: false })
 
     const portfolioList = data ?? []

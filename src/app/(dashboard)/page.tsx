@@ -42,11 +42,13 @@ export default function DashboardPage() {
 
   async function fetchDashboardData() {
     const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
 
     const [portfolioRes, positionsRes, watchlistRes] = await Promise.all([
-      supabase.from("portfolios").select("id, name, is_paper").order("created_at", { ascending: false }),
-      supabase.from("portfolio_positions").select("symbol, quantity, average_cost, portfolio_id").is("closed_at", null),
-      supabase.from("watchlists").select("symbols").limit(1).single(),
+      supabase.from("portfolios").select("id, name, is_paper").eq("user_id", user.id).order("created_at", { ascending: false }),
+      supabase.from("portfolio_positions").select("symbol, quantity, average_cost, portfolio_id, asset_type").eq("user_id", user.id).is("closed_at", null),
+      supabase.from("watchlists").select("symbols").eq("user_id", user.id).limit(1).single(),
     ])
 
     const portfolioData = portfolioRes.data ?? []
@@ -54,8 +56,9 @@ export default function DashboardPage() {
     setPortfolios(portfolioData)
     setPositions(positionData)
 
-    // Fetch live quotes for all position symbols
-    const posSymbols = Array.from(new Set(positionData.map((p) => p.symbol)))
+    // Fetch live quotes for all position symbols (exclude cash)
+    const stockPositions = positionData.filter((p: { asset_type?: string }) => p.asset_type !== "cash")
+    const posSymbols = Array.from(new Set(stockPositions.map((p) => p.symbol)))
     if (posSymbols.length > 0) {
       try {
         const res = await fetch(`/api/market/quote?symbols=${posSymbols.join(",")}`)

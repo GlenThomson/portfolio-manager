@@ -54,14 +54,20 @@ export default function PortfolioDetailPage() {
   useEffect(() => {
     fetchData()
     // Check if IBKR is connected
-    const supabase = createClient()
-    supabase
-      .from("broker_connections")
-      .select("id")
-      .eq("broker", "ibkr")
-      .limit(1)
-      .single()
-      .then(({ data }) => { if (data) setIbkrConnected(true) })
+    async function checkIbkr() {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data } = await supabase
+        .from("broker_connections")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("broker", "ibkr")
+        .limit(1)
+        .single()
+      if (data) setIbkrConnected(true)
+    }
+    checkIbkr()
   }, [portfolioId])
 
   useEffect(() => {
@@ -80,10 +86,12 @@ export default function PortfolioDetailPage() {
 
   async function fetchData() {
     const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
 
     const [portfolioRes, positionsRes] = await Promise.all([
-      supabase.from("portfolios").select("name, is_paper").eq("id", portfolioId).single(),
-      supabase.from("portfolio_positions").select("*").eq("portfolio_id", portfolioId).is("closed_at", null),
+      supabase.from("portfolios").select("name, is_paper").eq("id", portfolioId).eq("user_id", user.id).single(),
+      supabase.from("portfolio_positions").select("*").eq("portfolio_id", portfolioId).eq("user_id", user.id).is("closed_at", null),
     ])
 
     setPortfolio(portfolioRes.data)
