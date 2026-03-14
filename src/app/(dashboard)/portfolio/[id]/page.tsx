@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, Fragment, useMemo } from "react"
 import { useParams } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { getCurrentUserId } from "@/lib/supabase/user"
@@ -17,10 +17,13 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Plus, TrendingUp, TrendingDown, DollarSign, Briefcase, Upload, Wallet } from "lucide-react"
+import { Plus, TrendingUp, TrendingDown, DollarSign, Briefcase, Upload, Wallet, ArrowUpRight, ArrowDownRight } from "lucide-react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { BrokerConnectDialog } from "@/components/portfolio/broker-connect"
+import { PositionDetailRow } from "@/components/portfolio/position-detail-row"
+import { CsvExport } from "@/components/portfolio/csv-export"
+import { TransactionFilters } from "@/components/portfolio/transaction-filters"
 
 interface Position {
   id: string
@@ -49,6 +52,7 @@ export default function PortfolioDetailPage() {
   const [ibkrConnected, setIbkrConnected] = useState(false)
   const [form, setForm] = useState<TransactionForm>({ symbol: "", action: "buy", quantity: "", price: "" })
   const [loading, setLoading] = useState(true)
+  const [expandedPositions, setExpandedPositions] = useState<Set<string>>(new Set())
   const searchParams = useSearchParams()
 
   useEffect(() => {
@@ -186,11 +190,23 @@ export default function PortfolioDetailPage() {
     fetchData()
   }
 
+  function togglePositionExpand(positionId: string) {
+    setExpandedPositions((prev) => {
+      const next = new Set(prev)
+      if (next.has(positionId)) {
+        next.delete(positionId)
+      } else {
+        next.add(positionId)
+      }
+      return next
+    })
+  }
+
   // Split positions into stocks and cash
   const stockPositions = positions.filter((p) => p.asset_type !== "cash")
   const cashPositions = positions.filter((p) => p.asset_type === "cash")
 
-  // Calculate totals (stocks only — cash is separate)
+  // Calculate totals (stocks only -- cash is separate)
   const totalValue = stockPositions.reduce((sum, p) => {
     const q = quotes[p.symbol]
     return sum + (q ? q.price * parseFloat(p.quantity) : 0)
@@ -208,6 +224,66 @@ export default function PortfolioDetailPage() {
     (sum, p) => sum + parseFloat(p.average_cost),
     0
   )
+
+  // Day change calculation
+  const totalDayChange = useMemo(() => {
+    let dayChangeDollars = 0
+    let previousTotalValue = 0
+    stockPositions.forEach((p) => {
+      const q = quotes[p.symbol]
+      if (q) {
+        const qty = parseFloat(p.quantity)
+        dayChangeDollars += q.change * qty
+        previousTotalValue += (q.price - q.change) * qty
+      }
+    })
+    const dayChangePct = previousTotalValue > 0 ? (dayChangeDollars / previousTotalValue) * 100 : 0
+    return { dollars: dayChangeDollars, percent: dayChangePct }
+  }, [stockPositions, quotes])
+
+  // Best & worst performers
+  const performers = useMemo(() => {
+    const positionsWithPnl = stockPositions
+      .filter((p) => quotes[p.symbol] && parseFloat(p.quantity) > 0)
+      .map((p) => {
+        const q = quotes[p.symbol]
+        const avgCost = parseFloat(p.average_cost)
+        const pnlPct = avgCost > 0 ? ((q.price - avgCost) / avgCost) * 100 : 0
+        return { symbol: p.symbol, pnlPct }
+      })
+
+    if (positionsWithPnl.length === 0) return { best: null, worst: null }
+
+    const sorted = positionsWithPnl.sort((a, b) => b.pnlPct - a.pnlPct)
+    return {
+      best: sorted[0],
+      worst: sorted[sorted.length - 1],
+    }
+  }, [stockPositions, quotes])
+
+  // CSV export data
+  const exportPositions = useMemo(() => {
+    return stockPositions
+      .filter((p) => parseFloat(p.quantity) > 0)
+      .map((p) => {
+        const qty = parseFloat(p.quantity)
+        const avgCost = parseFloat(p.average_cost)
+        const q = quotes[p.symbol]
+        const currentPrice = q?.price ?? 0
+        const marketValue = currentPrice * qty
+        const pnl = (currentPrice - avgCost) * qty
+        const pnlPct = avgCost > 0 ? ((currentPrice - avgCost) / avgCost) * 100 : 0
+        return {
+          symbol: p.symbol,
+          quantity: qty,
+          averageCost: avgCost,
+          currentPrice,
+          marketValue,
+          pnl,
+          pnlPct,
+        }
+      })
+  }, [stockPositions, quotes])
 
   if (loading) {
     return <div className="animate-pulse h-96 bg-muted rounded-lg" />
@@ -227,7 +303,9 @@ export default function PortfolioDetailPage() {
           </h1>
         </div>
         <div className="flex gap-2">
+          <CsvExport positions={exportPositions} portfolioName={portfolio?.name ?? "Portfolio"} />
           <Button variant="outline" size="sm" className="sm:size-auto" onClick={() => setImportDialogOpen(true)}>
+
             <Upload className="mr-2 h-4 w-4" />
             <span className="hidden sm:inline">Import Holdings</span>
             <span className="sm:hidden">Import</span>
@@ -344,6 +422,24 @@ export default function PortfolioDetailPage() {
             </p>
           </CardContent>
         </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Day Change</CardTitle>
+            {totalDayChange.dollars >= 0 ? (
+              <ArrowUpRight className="h-4 w-4 text-green-500" />
+            ) : (
+              <ArrowDownRight className="h-4 w-4 text-red-500" />
+            )}
+          </CardHeader>
+          <CardContent>
+            <div className={`text-2xl font-bold ${totalDayChange.dollars >= 0 ? "text-green-500" : "text-red-500"}`}>
+              {totalDayChange.dollars >= 0 ? "+" : ""}${totalDayChange.dollars.toFixed(2)}
+            </div>
+            <p className={`text-xs ${totalDayChange.dollars >= 0 ? "text-green-500" : "text-red-500"}`}>
+              {totalDayChange.percent >= 0 ? "+" : ""}{totalDayChange.percent.toFixed(2)}%
+            </p>
+          </CardContent>
+        </Card>
         {cashPositions.length > 0 && (
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -354,6 +450,34 @@ export default function PortfolioDetailPage() {
               <div className="text-2xl font-bold">${totalCash.toFixed(2)}</div>
               <p className="text-xs text-muted-foreground">
                 {cashPositions.length} currenc{cashPositions.length === 1 ? "y" : "ies"}
+              </p>
+            </CardContent>
+          </Card>
+        )}
+        {performers.best && (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Best Performer</CardTitle>
+              <TrendingUp className="h-4 w-4 text-green-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{performers.best.symbol}</div>
+              <p className={`text-xs ${performers.best.pnlPct >= 0 ? "text-green-500" : "text-red-500"}`}>
+                {performers.best.pnlPct >= 0 ? "+" : ""}{performers.best.pnlPct.toFixed(2)}%
+              </p>
+            </CardContent>
+          </Card>
+        )}
+        {performers.worst && (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Worst Performer</CardTitle>
+              <TrendingDown className="h-4 w-4 text-red-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{performers.worst.symbol}</div>
+              <p className={`text-xs ${performers.worst.pnlPct >= 0 ? "text-green-500" : "text-red-500"}`}>
+                {performers.worst.pnlPct >= 0 ? "+" : ""}{performers.worst.pnlPct.toFixed(2)}%
               </p>
             </CardContent>
           </Card>
@@ -420,41 +544,62 @@ export default function PortfolioDetailPage() {
                   const marketValue = price * qty
                   const pnl = (price - avgCost) * qty
                   const pnlPct = avgCost > 0 ? ((price - avgCost) / avgCost) * 100 : 0
+                  const isExpanded = expandedPositions.has(pos.id)
 
                   return (
-                    <TableRow key={pos.id}>
-                      <TableCell>
-                        <Link href={`/stock/${pos.symbol}`} className="font-medium text-primary hover:underline">
-                          {pos.symbol}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="text-right">{qty}</TableCell>
-                      <TableCell className="text-right">${avgCost.toFixed(2)}</TableCell>
-                      <TableCell className="text-right">
-                        {price > 0 ? `$${price.toFixed(2)}` : "—"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {price > 0 ? `$${marketValue.toFixed(2)}` : "—"}
-                      </TableCell>
-                      <TableCell className={`text-right ${pnl >= 0 ? "text-green-500" : "text-red-500"}`}>
-                        {price > 0 ? (
-                          <>
-                            {pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}
-                            <br />
-                            <span className="text-xs">
-                              {pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(2)}%
-                            </span>
-                          </>
-                        ) : "—"}
-                      </TableCell>
-                      <TableCell className={`text-right ${(q?.change ?? 0) >= 0 ? "text-green-500" : "text-red-500"}`}>
-                        {q ? (
-                          <>
-                            {q.change >= 0 ? "+" : ""}{q.changePct.toFixed(2)}%
-                          </>
-                        ) : "—"}
-                      </TableCell>
-                    </TableRow>
+                    <Fragment key={pos.id}>
+                      <TableRow
+                        className="cursor-pointer"
+                        onClick={() => togglePositionExpand(pos.id)}
+                      >
+                        <TableCell>
+                          <Link
+                            href={`/stock/${pos.symbol}`}
+                            className="font-medium text-primary hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {pos.symbol}
+                          </Link>
+                        </TableCell>
+                        <TableCell className="text-right">{qty}</TableCell>
+                        <TableCell className="text-right">${avgCost.toFixed(2)}</TableCell>
+                        <TableCell className="text-right">
+                          {price > 0 ? `$${price.toFixed(2)}` : "\u2014"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {price > 0 ? `$${marketValue.toFixed(2)}` : "\u2014"}
+                        </TableCell>
+                        <TableCell className={`text-right ${pnl >= 0 ? "text-green-500" : "text-red-500"}`}>
+                          {price > 0 ? (
+                            <>
+                              {pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}
+                              <br />
+                              <span className="text-xs">
+                                {pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(2)}%
+                              </span>
+                            </>
+                          ) : "\u2014"}
+                        </TableCell>
+                        <TableCell className={`text-right ${(q?.change ?? 0) >= 0 ? "text-green-500" : "text-red-500"}`}>
+                          {q ? (
+                            <>
+                              {q.change >= 0 ? "+" : ""}{q.changePct.toFixed(2)}%
+                            </>
+                          ) : "\u2014"}
+                        </TableCell>
+                      </TableRow>
+                      {isExpanded && (
+                        <PositionDetailRow
+                          positionId={pos.id}
+                          portfolioId={portfolioId}
+                          symbol={pos.symbol}
+                          quantity={qty}
+                          averageCost={avgCost}
+                          currentPrice={price}
+                          colSpan={7}
+                        />
+                      )}
+                    </Fragment>
                   )
                 })}
               </TableBody>
@@ -505,6 +650,9 @@ export default function PortfolioDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Transaction History with Filters */}
+      <TransactionFilters portfolioId={portfolioId} />
     </div>
   )
 }
