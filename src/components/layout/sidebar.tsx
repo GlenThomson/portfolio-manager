@@ -8,6 +8,7 @@ import {
   Briefcase,
   Star,
   BarChart3,
+  GitCompareArrows,
   MessageSquare,
   Bell,
   Settings,
@@ -21,6 +22,7 @@ const navItems = [
   { label: "Portfolio", href: "/portfolio", icon: Briefcase },
   { label: "Watchlist", href: "/watchlist", icon: Star },
   { label: "Markets", href: "/stock/AAPL", icon: BarChart3 },
+  { label: "Compare", href: "/compare", icon: GitCompareArrows },
   { label: "AI Chat", href: "/chat", icon: MessageSquare },
 ]
 

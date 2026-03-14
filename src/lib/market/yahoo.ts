@@ -15,6 +15,7 @@ export async function getQuote(symbol: string) {
       regularMarketPreviousClose: 0, regularMarketOpen: 0, regularMarketDayHigh: 0,
       regularMarketDayLow: 0, regularMarketVolume: 0, marketCap: 0,
       fiftyTwoWeekHigh: 0, fiftyTwoWeekLow: 0, currency: "USD",
+      trailingPE: null, epsTrailingTwelveMonths: null, dividendYield: null, beta: null,
     }
   }
   return {
@@ -32,6 +33,10 @@ export async function getQuote(symbol: string) {
     fiftyTwoWeekHigh: result.fiftyTwoWeekHigh ?? 0,
     fiftyTwoWeekLow: result.fiftyTwoWeekLow ?? 0,
     currency: result.currency ?? "USD",
+    trailingPE: result.trailingPE ?? null,
+    epsTrailingTwelveMonths: result.epsTrailingTwelveMonths ?? null,
+    dividendYield: result.dividendYield != null ? result.dividendYield * 100 : null,
+    beta: result.beta ?? null,
   }
 }
 
