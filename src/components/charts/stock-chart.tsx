@@ -189,7 +189,11 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setShowIndicatorMenu(false)
       }
-      setContextMenu(null)
+      // Only dismiss context menu if click is outside of it
+      const target = e.target as HTMLElement
+      if (!target.closest("[data-alert-menu]")) {
+        setContextMenu(null)
+      }
     }
     document.addEventListener("mousedown", handleClick)
     return () => document.removeEventListener("mousedown", handleClick)
