@@ -762,37 +762,6 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
         {/* Main chart */}
         <div ref={mainChartRef} />
 
-        {/* Right-click context menu */}
-        {contextMenu && (
-          <div
-            data-alert-menu
-            className="absolute z-50 rounded-md shadow-xl py-1 min-w-[200px]"
-            style={{
-              left: contextMenu.x,
-              top: contextMenu.y,
-              background: "#1e222d",
-              border: `1px solid ${BORDER_COLOR}`,
-            }}
-          >
-            {onCreateAlert && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onCreateAlert(symbol, contextMenu.price, contextMenu.price > (legend?.close ?? 0) ? "above" : "below")
-                  setContextMenu(null)
-                  setToast(`Alert set at $${contextMenu.price.toFixed(2)}`)
-                  setTimeout(() => setToast(null), 2000)
-                }}
-                className="flex items-center gap-2 w-full px-3 py-2 text-xs hover:bg-[#2a2e39] transition-colors text-left"
-                style={{ color: "#d1d4dc" }}
-              >
-                <span className="text-sm">🔔</span>
-                Add alert at ${contextMenu.price.toFixed(2)}
-              </button>
-            )}
-          </div>
-        )}
-
         {/* Alert line overlays — hover to reveal delete, drag to move */}
         {alertCoords.map((ac) => {
           const isDragging = draggingAlert?.id === ac.id
@@ -892,6 +861,35 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
             <span style={{ color: "#ff9800" }}>Signal</span>
           </div>
           <div ref={macdChartRef} style={{ borderTop: `1px solid ${BORDER_COLOR}` }} />
+        </div>
+      )}
+
+      {/* Right-click context menu — rendered outside chart canvas to avoid z-index issues */}
+      {contextMenu && onCreateAlert && (
+        <div
+          data-alert-menu
+          className="fixed rounded-md shadow-xl py-1 min-w-[200px]"
+          style={{
+            left: (mainChartRef.current?.getBoundingClientRect().left ?? 0) + contextMenu.x,
+            top: (mainChartRef.current?.getBoundingClientRect().top ?? 0) + contextMenu.y,
+            zIndex: 9999,
+            background: "#1e222d",
+            border: `1px solid ${BORDER_COLOR}`,
+          }}
+        >
+          <button
+            onClick={() => {
+              onCreateAlert(symbol, contextMenu.price, contextMenu.price > (legend?.close ?? 0) ? "above" : "below")
+              setContextMenu(null)
+              setToast(`Alert set at $${contextMenu.price.toFixed(2)}`)
+              setTimeout(() => setToast(null), 2000)
+            }}
+            className="flex items-center gap-2 w-full px-3 py-2 text-xs hover:bg-[#2a2e39] transition-colors text-left cursor-pointer"
+            style={{ color: "#d1d4dc" }}
+          >
+            <span className="text-sm">🔔</span>
+            Add alert at ${contextMenu.price.toFixed(2)}
+          </button>
         </div>
       )}
     </div>
