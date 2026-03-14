@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getQuote } from "@/lib/market/yahoo"
+import { sendAlertTriggeredEmail } from "@/lib/email/resend"
 
 export async function GET() {
   const supabase = createClient()
@@ -25,6 +26,17 @@ export async function GET() {
   if (!activeAlerts || activeAlerts.length === 0) {
     return NextResponse.json({ triggered: [], checked: 0 })
   }
+
+  // Check if user has email alerts enabled
+  const { data: profile } = await supabase
+    .from("user_profiles")
+    .select("settings")
+    .eq("user_id", user.id)
+    .single()
+
+  const emailAlertsEnabled = profile?.settings &&
+    typeof profile.settings === "object" &&
+    (profile.settings as Record<string, unknown>).emailAlerts === true
 
   // Group alerts by symbol to minimize API calls
   const symbolMap = new Map<string, typeof activeAlerts>()
@@ -90,6 +102,17 @@ export async function GET() {
             condition_value: targetValue,
             current_price: currentPrice,
           })
+
+          // Send email notification if enabled
+          if (emailAlertsEnabled && user.email && process.env.RESEND_API_KEY) {
+            await sendAlertTriggeredEmail({
+              to: user.email,
+              symbol: alert.symbol,
+              conditionType: alert.condition_type,
+              conditionValue: targetValue,
+              currentPrice,
+            })
+          }
         }
       }
     } catch (err) {

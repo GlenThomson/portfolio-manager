@@ -3,12 +3,13 @@
 import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { DollarSign, Briefcase, Loader2, Check } from "lucide-react"
+import { DollarSign, Briefcase, Loader2, Check, Bell } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface UserSettings {
   defaultCurrency?: string
   defaultPaperTrading?: boolean
+  emailAlerts?: boolean
 }
 
 interface PreferencesSettingsProps {
@@ -26,6 +27,7 @@ const currencies = [
 export function PreferencesSettings({ initialSettings }: PreferencesSettingsProps) {
   const [currency, setCurrency] = useState(initialSettings.defaultCurrency ?? "USD")
   const [paperTrading, setPaperTrading] = useState(initialSettings.defaultPaperTrading ?? false)
+  const [emailAlerts, setEmailAlerts] = useState(initialSettings.emailAlerts ?? false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -43,6 +45,7 @@ export function PreferencesSettings({ initialSettings }: PreferencesSettingsProp
           settings: {
             defaultCurrency: currency,
             defaultPaperTrading: paperTrading,
+            emailAlerts,
           },
         }),
       })
@@ -132,6 +135,55 @@ export function PreferencesSettings({ initialSettings }: PreferencesSettingsProp
                 className={cn(
                   "pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform",
                   paperTrading ? "translate-x-5" : "translate-x-0"
+                )}
+              />
+            </button>
+          </div>
+
+          {error && (
+            <p className="text-sm text-destructive">{error}</p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Alert Notifications */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Bell className="h-5 w-5" />
+            Alert Notifications
+          </CardTitle>
+          <CardDescription>
+            Choose how you want to be notified when your price alerts are triggered
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div
+            className="flex items-center justify-between rounded-lg border border-border p-4 cursor-pointer hover:bg-accent/50 transition-colors"
+            onClick={() => setEmailAlerts(!emailAlerts)}
+          >
+            <div className="space-y-0.5">
+              <p className="text-sm font-medium">Email Notifications</p>
+              <p className="text-xs text-muted-foreground">
+                Receive an email when a price alert is triggered
+              </p>
+            </div>
+            <button
+              role="switch"
+              aria-checked={emailAlerts}
+              onClick={(e) => {
+                e.stopPropagation()
+                setEmailAlerts(!emailAlerts)
+              }}
+              className={cn(
+                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                emailAlerts ? "bg-primary" : "bg-input"
+              )}
+            >
+              <span
+                className={cn(
+                  "pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform",
+                  emailAlerts ? "translate-x-5" : "translate-x-0"
                 )}
               />
             </button>

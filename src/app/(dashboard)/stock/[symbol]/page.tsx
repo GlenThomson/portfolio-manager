@@ -100,6 +100,26 @@ export default function StockDetailPage() {
     setWatchlistLoading(false)
   }
 
+  async function handleCreateAlert(sym: string, price: number, condition: "above" | "below") {
+    try {
+      const res = await fetch("/api/alerts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbol: sym,
+          condition_type: condition,
+          condition_value: price,
+        }),
+      })
+      if (res.ok) {
+        // Brief visual confirmation — could be a toast in the future
+        alert(`Alert created: ${sym} ${condition} $${price.toFixed(2)}`)
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   const isPositive = (quote?.regularMarketChange ?? 0) >= 0
 
   return (
@@ -164,6 +184,7 @@ export default function StockDetailPage() {
           }}
           activeInterval={activeInterval}
           onLoadMore={handleLoadMore}
+          onCreateAlert={handleCreateAlert}
         />
       )}
 

@@ -79,6 +79,7 @@ interface StockChartProps {
   activeInterval: string
   activePeriod?: string
   onLoadMore?: (beforeTimestamp: number) => void
+  onCreateAlert?: (symbol: string, price: number, condition: "above" | "below") => void
 }
 
 interface OHLCLegend {
@@ -112,13 +113,14 @@ function filterClean(data: OHLC[]): OHLC[] {
 
 // ── Component ────────────────────────────────────────────
 
-export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoadMore }: StockChartProps) {
+export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoadMore, onCreateAlert }: StockChartProps) {
   const mainChartRef = useRef<HTMLDivElement>(null)
   const rsiChartRef = useRef<HTMLDivElement>(null)
   const macdChartRef = useRef<HTMLDivElement>(null)
   const [indicators, setIndicators] = useState<Indicator[]>(DEFAULT_INDICATORS)
   const [legend, setLegend] = useState<OHLCLegend | null>(null)
   const [showIndicatorMenu, setShowIndicatorMenu] = useState(false)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; price: number } | null>(null)
   const [logScale, setLogScale] = useState(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("chart-log-scale") === "true"
@@ -167,12 +169,13 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
     }
   }, [data])
 
-  // Close indicator menu on outside click
+  // Close indicator menu and context menu on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setShowIndicatorMenu(false)
       }
+      setContextMenu(null)
     }
     document.addEventListener("mousedown", handleClick)
     return () => document.removeEventListener("mousedown", handleClick)
@@ -500,9 +503,23 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
     })
     resizeObserver.observe(container)
 
+    // ── Right-click context menu for alerts ─────────────
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault()
+      const rect = container.getBoundingClientRect()
+      const y = e.clientY - rect.top
+      // Convert y coordinate to price using the candle series coordinate
+      const price = series["candle"]?.coordinateToPrice(y)
+      if (price != null && typeof price === "number" && price > 0) {
+        setContextMenu({ x: e.clientX - rect.left, y: e.clientY - rect.top, price: Math.round(price * 100) / 100 })
+      }
+    }
+    container.addEventListener("contextmenu", handleContextMenu)
+
     return () => {
       clearTimeout(loadMoreTimer)
       window.removeEventListener("resize", handleResize)
+      container.removeEventListener("contextmenu", handleContextMenu)
       resizeObserver.disconnect()
       mainChart.remove()
       rsiChart?.remove()
@@ -667,6 +684,45 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
 
         {/* Main chart */}
         <div ref={mainChartRef} />
+
+        {/* Right-click context menu */}
+        {contextMenu && onCreateAlert && (
+          <div
+            className="absolute z-50 rounded-md shadow-xl py-1 min-w-[200px]"
+            style={{
+              left: contextMenu.x,
+              top: contextMenu.y,
+              background: "#1e222d",
+              border: `1px solid ${BORDER_COLOR}`,
+            }}
+          >
+            <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider" style={{ color: TEXT_COLOR }}>
+              Alert at ${contextMenu.price.toFixed(2)}
+            </div>
+            <button
+              onClick={() => {
+                onCreateAlert(symbol, contextMenu.price, "above")
+                setContextMenu(null)
+              }}
+              className="flex items-center gap-2 w-full px-3 py-2 text-xs hover:bg-[#2a2e39] transition-colors text-left"
+              style={{ color: "#26a69a" }}
+            >
+              <span className="text-sm">↗</span>
+              Alert when price crosses above ${contextMenu.price.toFixed(2)}
+            </button>
+            <button
+              onClick={() => {
+                onCreateAlert(symbol, contextMenu.price, "below")
+                setContextMenu(null)
+              }}
+              className="flex items-center gap-2 w-full px-3 py-2 text-xs hover:bg-[#2a2e39] transition-colors text-left"
+              style={{ color: "#ef5350" }}
+            >
+              <span className="text-sm">↘</span>
+              Alert when price crosses below ${contextMenu.price.toFixed(2)}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* RSI sub-chart */}
