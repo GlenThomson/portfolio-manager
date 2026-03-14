@@ -34,6 +34,7 @@ export default function StockDetailPage() {
   const [loading, setLoading] = useState(true)
   const [inWatchlist, setInWatchlist] = useState(false)
   const [watchlistLoading, setWatchlistLoading] = useState(false)
+  const [alerts, setAlerts] = useState<Array<{ id: string; price: number; condition: string }>>([])
   const loadingMoreRef = useRef(false)
 
   const handleLoadMore = useCallback(async (beforeTimestamp: number) => {
@@ -60,21 +61,49 @@ export default function StockDetailPage() {
     }
   }, [symbol, activePeriod, activeInterval])
 
+  // Check alerts client-side when quote updates
+  const checkAlerts = useCallback((currentPrice: number) => {
+    if (!currentPrice || alerts.length === 0) return
+    const triggered: string[] = []
+    for (const a of alerts) {
+      const isTriggered =
+        (a.condition === "above" && currentPrice >= a.price) ||
+        (a.condition === "below" && currentPrice <= a.price)
+      if (isTriggered) triggered.push(a.id)
+    }
+    if (triggered.length > 0) {
+      // Call server to officially trigger and send email
+      fetch("/api/alerts/check").catch(() => {})
+      // Remove triggered alerts from local state
+      setAlerts((prev) => prev.filter((a) => !triggered.includes(a.id)))
+    }
+  }, [alerts])
+
   useEffect(() => {
     fetch(`/api/market/quote?symbols=${symbol}`)
       .then((r) => r.ok ? r.json() : null)
-      .then((data) => { if (data) setQuote(data) })
+      .then((data) => {
+        if (data) {
+          setQuote(data)
+          checkAlerts(data.regularMarketPrice)
+        }
+      })
       .catch(() => {})
 
     // Poll quote every 15s for intraday
     const quoteInterval = setInterval(() => {
       fetch(`/api/market/quote?symbols=${symbol}`)
         .then((r) => r.ok ? r.json() : null)
-        .then((data) => { if (data) setQuote(data) })
+        .then((data) => {
+          if (data) {
+            setQuote(data)
+            checkAlerts(data.regularMarketPrice)
+          }
+        })
         .catch(() => {})
     }, 15000)
     return () => clearInterval(quoteInterval)
-  }, [symbol])
+  }, [symbol, checkAlerts])
 
   useEffect(() => {
     setLoading(true)
@@ -136,8 +165,6 @@ export default function StockDetailPage() {
     }
     setWatchlistLoading(false)
   }
-
-  const [alerts, setAlerts] = useState<Array<{ id: string; price: number; condition: string }>>([])
 
   // Fetch existing alerts for this symbol
   useEffect(() => {
