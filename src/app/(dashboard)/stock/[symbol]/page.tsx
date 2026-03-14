@@ -100,6 +100,22 @@ export default function StockDetailPage() {
     setWatchlistLoading(false)
   }
 
+  const [alerts, setAlerts] = useState<Array<{ id: string; price: number; condition: string }>>([])
+
+  // Fetch existing alerts for this symbol
+  useEffect(() => {
+    fetch("/api/alerts")
+      .then((r) => r.ok ? r.json() : [])
+      .then((data: Array<{ id: string; symbol: string; condition_type: string; condition_value: string; is_active: boolean }>) => {
+        setAlerts(
+          data
+            .filter((a) => a.symbol === symbol && a.is_active)
+            .map((a) => ({ id: a.id, price: parseFloat(a.condition_value), condition: a.condition_type }))
+        )
+      })
+      .catch(() => {})
+  }, [symbol])
+
   async function handleCreateAlert(sym: string, price: number, condition: "above" | "below") {
     try {
       const res = await fetch("/api/alerts", {
@@ -112,8 +128,19 @@ export default function StockDetailPage() {
         }),
       })
       if (res.ok) {
-        // Brief visual confirmation — could be a toast in the future
-        alert(`Alert created: ${sym} ${condition} $${price.toFixed(2)}`)
+        const newAlert = await res.json()
+        setAlerts((prev) => [...prev, { id: newAlert.id, price, condition }])
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  async function handleRemoveAlert(alertId: string) {
+    try {
+      const res = await fetch(`/api/alerts?id=${alertId}`, { method: "DELETE" })
+      if (res.ok) {
+        setAlerts((prev) => prev.filter((a) => a.id !== alertId))
       }
     } catch {
       // ignore
@@ -185,6 +212,8 @@ export default function StockDetailPage() {
           activeInterval={activeInterval}
           onLoadMore={handleLoadMore}
           onCreateAlert={handleCreateAlert}
+          onRemoveAlert={handleRemoveAlert}
+          alerts={alerts}
         />
       )}
 

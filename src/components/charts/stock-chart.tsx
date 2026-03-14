@@ -72,6 +72,12 @@ const EMA_CONFIGS = [
 
 // ── Types ────────────────────────────────────────────────
 
+interface ChartAlert {
+  id: string
+  price: number
+  condition: string
+}
+
 interface StockChartProps {
   symbol: string
   data: OHLC[]
@@ -80,6 +86,8 @@ interface StockChartProps {
   activePeriod?: string
   onLoadMore?: (beforeTimestamp: number) => void
   onCreateAlert?: (symbol: string, price: number, condition: "above" | "below") => void
+  onRemoveAlert?: (alertId: string) => void
+  alerts?: ChartAlert[]
 }
 
 interface OHLCLegend {
@@ -113,7 +121,7 @@ function filterClean(data: OHLC[]): OHLC[] {
 
 // ── Component ────────────────────────────────────────────
 
-export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoadMore, onCreateAlert }: StockChartProps) {
+export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoadMore, onCreateAlert, onRemoveAlert, alerts = [] }: StockChartProps) {
   const mainChartRef = useRef<HTMLDivElement>(null)
   const rsiChartRef = useRef<HTMLDivElement>(null)
   const macdChartRef = useRef<HTMLDivElement>(null)
@@ -121,6 +129,7 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
   const [legend, setLegend] = useState<OHLCLegend | null>(null)
   const [showIndicatorMenu, setShowIndicatorMenu] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; price: number } | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
   const [logScale, setLogScale] = useState(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("chart-log-scale") === "true"
@@ -143,6 +152,7 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
     rsi: IChartApi | null
     macd: IChartApi | null
     series: Record<string, ISeriesApi<any>>
+    alertLines?: any[]
   }>({ main: null, rsi: null, macd: null, series: {} })
 
   // Track last dataset endpoint to detect fresh load vs prepend
@@ -530,6 +540,38 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
     }
   }, [indicators, showRSI, showMACD, logScale, populateAllSeries])
 
+  // ── Effect: Draw alert lines on chart ────────────────────
+  useEffect(() => {
+    const { series } = chartsRef.current
+    const candleSeries = series["candle"]
+    if (!candleSeries) return
+
+    // Remove existing alert price lines
+    const existingLines = candleSeries.priceLines?.() ?? []
+    // We can't easily enumerate, so recreate by removing all custom lines
+    // lightweight-charts doesn't have a removeAllPriceLines, so track them
+    // Instead, we store lines on the ref
+    if (chartsRef.current.alertLines) {
+      for (const line of chartsRef.current.alertLines) {
+        try { candleSeries.removePriceLine(line) } catch { /* already removed */ }
+      }
+    }
+
+    const newLines = alerts.map((a) =>
+      candleSeries.createPriceLine({
+        price: a.price,
+        color: "#ff9800",
+        lineWidth: 1,
+        lineStyle: 2, // dashed
+        axisLabelVisible: true,
+        title: `🔔 $${a.price.toFixed(2)}`,
+        axisLabelColor: "#ff9800",
+        axisLabelTextColor: "#fff",
+      })
+    )
+    chartsRef.current.alertLines = newLines
+  }, [alerts])
+
   // ── Effect 2: Data update (in-place, no chart recreation) ──
   // Runs when data prop changes. Updates series data without touching the chart.
   // fitContent only on fresh loads (last timestamp changed), not on prepends.
@@ -688,9 +730,9 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
         <div ref={mainChartRef} />
 
         {/* Right-click context menu */}
-        {contextMenu && onCreateAlert && (
+        {contextMenu && (
           <div
-            className="absolute z-50 rounded-md shadow-xl py-1 min-w-[180px]"
+            className="absolute z-50 rounded-md shadow-xl py-1 min-w-[200px]"
             style={{
               left: contextMenu.x,
               top: contextMenu.y,
@@ -698,17 +740,47 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
               border: `1px solid ${BORDER_COLOR}`,
             }}
           >
-            <button
-              onClick={() => {
-                onCreateAlert(symbol, contextMenu.price, contextMenu.price > (legend?.close ?? 0) ? "above" : "below")
-                setContextMenu(null)
-              }}
-              className="flex items-center gap-2 w-full px-3 py-2 text-xs hover:bg-[#2a2e39] transition-colors text-left"
-              style={{ color: "#d1d4dc" }}
-            >
-              <span className="text-sm">🔔</span>
-              Add alert at ${contextMenu.price.toFixed(2)}
-            </button>
+            {onCreateAlert && (
+              <button
+                onClick={() => {
+                  onCreateAlert(symbol, contextMenu.price, contextMenu.price > (legend?.close ?? 0) ? "above" : "below")
+                  setContextMenu(null)
+                  setToast(`Alert set at $${contextMenu.price.toFixed(2)}`)
+                  setTimeout(() => setToast(null), 2000)
+                }}
+                className="flex items-center gap-2 w-full px-3 py-2 text-xs hover:bg-[#2a2e39] transition-colors text-left"
+                style={{ color: "#d1d4dc" }}
+              >
+                <span className="text-sm">🔔</span>
+                Add alert at ${contextMenu.price.toFixed(2)}
+              </button>
+            )}
+            {alerts.filter((a) => Math.abs(a.price - contextMenu.price) / contextMenu.price < 0.02).map((a) => (
+              <button
+                key={a.id}
+                onClick={() => {
+                  onRemoveAlert?.(a.id)
+                  setContextMenu(null)
+                  setToast(`Alert at $${a.price.toFixed(2)} removed`)
+                  setTimeout(() => setToast(null), 2000)
+                }}
+                className="flex items-center gap-2 w-full px-3 py-2 text-xs hover:bg-[#2a2e39] transition-colors text-left"
+                style={{ color: "#ef5350" }}
+              >
+                <span className="text-sm">✕</span>
+                Remove alert at ${a.price.toFixed(2)}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Toast notification */}
+        {toast && (
+          <div
+            className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-md text-xs font-medium animate-in fade-in slide-in-from-bottom-2"
+            style={{ background: "#ff9800", color: "#000" }}
+          >
+            {toast}
           </div>
         )}
       </div>
