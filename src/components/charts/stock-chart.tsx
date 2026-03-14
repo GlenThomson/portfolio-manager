@@ -508,18 +508,20 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
       e.preventDefault()
       const rect = container.getBoundingClientRect()
       const y = e.clientY - rect.top
-      // Convert y coordinate to price using the candle series coordinate
       const price = series["candle"]?.coordinateToPrice(y)
       if (price != null && typeof price === "number" && price > 0) {
         setContextMenu({ x: e.clientX - rect.left, y: e.clientY - rect.top, price: Math.round(price * 100) / 100 })
       }
     }
+    const handleClick = () => setContextMenu(null)
     container.addEventListener("contextmenu", handleContextMenu)
+    container.addEventListener("click", handleClick)
 
     return () => {
       clearTimeout(loadMoreTimer)
       window.removeEventListener("resize", handleResize)
       container.removeEventListener("contextmenu", handleContextMenu)
+      container.removeEventListener("click", handleClick)
       resizeObserver.disconnect()
       mainChart.remove()
       rsiChart?.remove()
@@ -688,7 +690,7 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
         {/* Right-click context menu */}
         {contextMenu && onCreateAlert && (
           <div
-            className="absolute z-50 rounded-md shadow-xl py-1 min-w-[200px]"
+            className="absolute z-50 rounded-md shadow-xl py-1 min-w-[180px]"
             style={{
               left: contextMenu.x,
               top: contextMenu.y,
@@ -696,30 +698,16 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
               border: `1px solid ${BORDER_COLOR}`,
             }}
           >
-            <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider" style={{ color: TEXT_COLOR }}>
-              Alert at ${contextMenu.price.toFixed(2)}
-            </div>
             <button
               onClick={() => {
-                onCreateAlert(symbol, contextMenu.price, "above")
+                onCreateAlert(symbol, contextMenu.price, contextMenu.price > (legend?.close ?? 0) ? "above" : "below")
                 setContextMenu(null)
               }}
               className="flex items-center gap-2 w-full px-3 py-2 text-xs hover:bg-[#2a2e39] transition-colors text-left"
-              style={{ color: "#26a69a" }}
+              style={{ color: "#d1d4dc" }}
             >
-              <span className="text-sm">↗</span>
-              Alert when price crosses above ${contextMenu.price.toFixed(2)}
-            </button>
-            <button
-              onClick={() => {
-                onCreateAlert(symbol, contextMenu.price, "below")
-                setContextMenu(null)
-              }}
-              className="flex items-center gap-2 w-full px-3 py-2 text-xs hover:bg-[#2a2e39] transition-colors text-left"
-              style={{ color: "#ef5350" }}
-            >
-              <span className="text-sm">↘</span>
-              Alert when price crosses below ${contextMenu.price.toFixed(2)}
+              <span className="text-sm">🔔</span>
+              Add alert at ${contextMenu.price.toFixed(2)}
             </button>
           </div>
         )}
