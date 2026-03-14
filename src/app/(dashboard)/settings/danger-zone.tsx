@@ -2,9 +2,9 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { AlertTriangle, LogOut, Loader2 } from "lucide-react"
+import { LogOut, Loader2 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 
 export function DangerZone() {
@@ -24,18 +24,12 @@ export function DangerZone() {
   }
 
   return (
-    <Card className="border-destructive/50">
+    <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-destructive">
-          <AlertTriangle className="h-5 w-5" />
-          Danger Zone
-        </CardTitle>
-        <CardDescription>
-          Irreversible actions for your account
-        </CardDescription>
+        <CardTitle>Account</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="flex items-center justify-between rounded-lg border border-destructive/30 p-4">
+        <div className="flex items-center justify-between">
           <div className="space-y-0.5">
             <p className="text-sm font-medium">Sign Out</p>
             <p className="text-xs text-muted-foreground">
@@ -43,7 +37,7 @@ export function DangerZone() {
             </p>
           </div>
           <Button
-            variant="destructive"
+            variant="outline"
             size="sm"
             onClick={handleSignOut}
             disabled={signingOut}
