@@ -104,14 +104,19 @@ export async function GET() {
           })
 
           // Send email notification if enabled
-          if (emailAlertsEnabled && user.email && process.env.RESEND_API_KEY) {
-            await sendAlertTriggeredEmail({
-              to: user.email,
-              symbol: alert.symbol,
-              conditionType: alert.condition_type,
-              conditionValue: targetValue,
-              currentPrice,
-            })
+          if (user.email && process.env.RESEND_API_KEY) {
+            if (emailAlertsEnabled) {
+              const result = await sendAlertTriggeredEmail({
+                to: user.email,
+                symbol: alert.symbol,
+                conditionType: alert.condition_type,
+                conditionValue: targetValue,
+                currentPrice,
+              })
+              console.log(`Alert email to ${user.email}: ${result ? "sent" : "failed"}`)
+            } else {
+              console.log(`Alert triggered for ${alert.symbol} but email alerts not enabled in settings`)
+            }
           }
         }
       }
