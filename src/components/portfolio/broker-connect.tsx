@@ -32,7 +32,8 @@ type CSVStep = "upload" | "map" | "done"
 const FIELDS = [
   { value: "symbol", label: "Symbol / Ticker", required: true },
   { value: "quantity", label: "Quantity / Shares", required: true },
-  { value: "price", label: "Price / Cost", required: true },
+  { value: "price", label: "Price / Cost per Share", required: true },
+  { value: "totalCost", label: "Total Cost (overrides Price)", required: false },
   { value: "action", label: "Action (Buy/Sell)", required: false },
   { value: "date", label: "Date", required: false },
   { value: "fees", label: "Fees", required: false },
@@ -126,20 +127,26 @@ export function BrokerConnectDialog({
 
     // Quantity — "shares", "units", "quantity", "qty" but NOT "dollar value" or "number of shares purchased/sold"
     findHeader("quantity", (l) => {
-      if (l.includes("dollar") || l.includes("value") || l.includes("purchased") || l.includes("sold") || l.includes("gained") || l.includes("disposed")) return false
+      if (l.includes("dollar") || l.includes("value") || l.includes("purchased") || l.includes("sold") || l.includes("gained") || l.includes("disposed") || l.includes("number of")) return false
       return l.includes("quantity") || l === "qty" || l === "shares" || l === "units" ||
-        l.includes("shareholding") && l.includes("ending")
+        (l.includes("shareholding") && l.includes("ending"))
     })
 
-    // Price — "price", "cost", "average" but NOT "dollar value"
+    // Price — "price", "cost", "average" but NOT "dollar value" and prefer "ending share price"
     findHeader("price", (l) => {
       if (l.includes("dollar") || l.includes("value") || l.includes("total")) return false
+      if (l.includes("starting")) return false
       return (l.includes("price") || l.includes("cost") || l.includes("average")) && !l.includes("fee")
     })
 
+    // Total Cost — "dollar value of shares purchased"
+    findHeader("totalCost", (l) =>
+      l.includes("dollar value") && l.includes("purchased")
+    )
+
     // Fees — must match before action to avoid "transaction fees" matching "action"
     findHeader("fees", (l) =>
-      l.includes("fee") || l.includes("commission") || l.includes("brokerage")
+      (l.includes("fee") || l.includes("commission") || l.includes("brokerage")) && !l.includes("adr")
     )
 
     // Action — "action", "type", "side", "direction" but NOT "asset type"
@@ -205,8 +212,8 @@ export function BrokerConnectDialog({
       if (field) mapping[field] = header
     }
 
-    if (!mapping.symbol || !mapping.quantity || !mapping.price) {
-      setError("Please map at least Symbol, Quantity, and Price columns")
+    if (!mapping.symbol || !mapping.quantity || (!mapping.price && !mapping.totalCost)) {
+      setError("Please map at least Symbol, Quantity, and Price (or Total Cost) columns")
       return
     }
 
@@ -308,7 +315,7 @@ export function BrokerConnectDialog({
   const mappedHeaders = csvHeaders.filter((h) => columnMap[h])
   const skippedHeaders = csvHeaders.filter((h) => !columnMap[h])
   const mappedFields = new Set(Object.values(columnMap).filter(Boolean))
-  const hasRequired = mappedFields.has("symbol") && mappedFields.has("quantity") && mappedFields.has("price")
+  const hasRequired = mappedFields.has("symbol") && mappedFields.has("quantity") && (mappedFields.has("price") || mappedFields.has("totalCost"))
 
   // Get sample value for a header
   const sampleVal = (header: string) => csvPreview[0]?.[header] ?? "—"
@@ -469,7 +476,7 @@ export function BrokerConnectDialog({
                   {hasRequired ? (
                     <span className="text-green-500">Required fields mapped</span>
                   ) : (
-                    <span className="text-yellow-500">Map at least Symbol, Quantity, and Price</span>
+                    <span className="text-yellow-500">Map at least Symbol, Quantity, and Price or Total Cost</span>
                   )}
                   {!mappedFields.has("action") && <span> &middot; No Action column — all rows imported as buys</span>}
                 </div>

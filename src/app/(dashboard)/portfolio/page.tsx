@@ -31,6 +31,8 @@ export default function PortfoliosPage() {
   const [isPaper, setIsPaper] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [currencySymbol, setCurrencySymbol] = useState("$")
+  const [fxRate, setFxRate] = useState(1)
 
   useEffect(() => {
     fetchPortfolios()
@@ -50,12 +52,24 @@ export default function PortfoliosPage() {
     const portfolioList = data ?? []
     setPortfolios(portfolioList)
 
+    // Fetch user currency preference
+    const { data: profile } = await supabase.from("user_profiles").select("settings").eq("user_id", user.id).single()
+    const userCurrency = (profile?.settings as { defaultCurrency?: string })?.defaultCurrency ?? "USD"
+    const symbols: Record<string, string> = { USD: "$", NZD: "NZ$", AUD: "A$", GBP: "£", EUR: "€" }
+    setCurrencySymbol(symbols[userCurrency] ?? "$")
+    if (userCurrency !== "USD") {
+      try {
+        const fxRes = await fetch(`/api/market/currency?from=USD&to=${userCurrency}`)
+        if (fxRes.ok) { const d = await fxRes.json(); setFxRate(d.rate) }
+      } catch {}
+    }
+
     // Fetch position summaries for each portfolio
     if (portfolioList.length > 0) {
       const ids = portfolioList.map((p) => p.id)
       const { data: positions } = await supabase
         .from("portfolio_positions")
-        .select("portfolio_id, quantity, average_cost, asset_type")
+        .select("portfolio_id, symbol, quantity, average_cost, asset_type")
         .in("portfolio_id", ids)
         .is("closed_at", null)
 
@@ -63,6 +77,33 @@ export default function PortfoliosPage() {
       for (const p of portfolioList) {
         sums[p.id] = { positionCount: 0, totalValue: 0, cashTotal: 0 }
       }
+
+      // Collect unique symbols to fetch current prices
+      const symbols = new Set<string>()
+      for (const pos of positions ?? []) {
+        if (pos.asset_type !== "cash") {
+          symbols.add(pos.symbol)
+        }
+      }
+
+      // Fetch current quotes for all symbols
+      const priceMap: Record<string, number> = {}
+      if (symbols.size > 0) {
+        try {
+          const symbolArr = Array.from(symbols)
+          const res = await fetch(`/api/market/quote?symbols=${symbolArr.join(",")}`)
+          if (res.ok) {
+            const data = await res.json()
+            const quotes = Array.isArray(data) ? data : [data]
+            for (const q of quotes) {
+              if (q?.symbol && q?.regularMarketPrice) {
+                priceMap[q.symbol] = q.regularMarketPrice
+              }
+            }
+          }
+        } catch {}
+      }
+
       for (const pos of positions ?? []) {
         const s = sums[pos.portfolio_id]
         if (!s) continue
@@ -70,7 +111,9 @@ export default function PortfoliosPage() {
           s.cashTotal += parseFloat(pos.average_cost)
         } else {
           s.positionCount++
-          s.totalValue += parseFloat(pos.quantity) * parseFloat(pos.average_cost)
+          const qty = parseFloat(pos.quantity)
+          const price = priceMap[pos.symbol] ?? parseFloat(pos.average_cost)
+          s.totalValue += qty * price
         }
       }
       setSummaries(sums)
@@ -198,10 +241,10 @@ export default function PortfoliosPage() {
                     const total = (s?.totalValue ?? 0) + (s?.cashTotal ?? 0)
                     return (
                       <>
-                        <p className="text-2xl font-bold">${total.toFixed(2)}</p>
+                        <p className="text-2xl font-bold">{currencySymbol}{(total * fxRate).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                         <p className="text-sm text-muted-foreground">
                           {s?.positionCount ?? 0} position{(s?.positionCount ?? 0) !== 1 ? "s" : ""}
-                          {(s?.cashTotal ?? 0) > 0 && ` · $${s!.cashTotal.toFixed(2)} cash`}
+                          {(s?.cashTotal ?? 0) > 0 && ` · ${currencySymbol}${(s!.cashTotal * fxRate).toFixed(2)} cash`}
                         </p>
                       </>
                     )

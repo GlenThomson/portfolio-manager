@@ -559,9 +559,7 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
     const candleSeries = series["candle"]
     if (!candleSeries) return
 
-    // Remove existing alert price lines
-    const existingLines = candleSeries.priceLines?.() ?? []
-    // We can't easily enumerate, so recreate by removing all custom lines
+    // Remove existing alert price lines and recreate
     // lightweight-charts doesn't have a removeAllPriceLines, so track them
     // Instead, we store lines on the ref
     if (chartsRef.current.alertLines) {

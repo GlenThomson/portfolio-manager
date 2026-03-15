@@ -10,6 +10,8 @@ interface Holding {
 interface AllocationChartProps {
   holdings: Holding[]
   cashTotal?: number
+  currencySymbol?: string
+  fxRate?: number
 }
 
 const COLORS = [
@@ -27,7 +29,7 @@ const COLORS = [
   "#e11d48", // rose
 ]
 
-export function AllocationChart({ holdings, cashTotal = 0 }: AllocationChartProps) {
+export function AllocationChart({ holdings, cashTotal = 0, currencySymbol = "$", fxRate = 1 }: AllocationChartProps) {
   const data = useMemo(() => {
     // Aggregate by symbol
     const map = new Map<string, number>()
@@ -120,13 +122,13 @@ export function AllocationChart({ holdings, cashTotal = 0 }: AllocationChartProp
             className="fill-muted-foreground"
             fontSize="10"
           >
-            ${grandTotal.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+            {currencySymbol}{(grandTotal * fxRate).toLocaleString("en-US", { maximumFractionDigits: 0 })}
           </text>
         </svg>
       </div>
 
       {/* Legend */}
-      <div className="flex-1 space-y-1.5 min-w-0 max-h-[200px] overflow-y-auto">
+      <div className="flex-1 space-y-1.5 min-w-0 max-h-[360px] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
         {segments.map((seg) => (
           <div key={seg.symbol} className="flex items-center gap-2 text-sm">
             <div
@@ -138,7 +140,7 @@ export function AllocationChart({ holdings, cashTotal = 0 }: AllocationChartProp
               {(seg.pct * 100).toFixed(1)}%
             </span>
             <span className="text-muted-foreground flex-shrink-0 w-20 text-right">
-              ${seg.value.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+              {currencySymbol}{(seg.value * fxRate).toLocaleString("en-US", { maximumFractionDigits: 0 })}
             </span>
           </div>
         ))}
@@ -150,7 +152,7 @@ export function AllocationChart({ holdings, cashTotal = 0 }: AllocationChartProp
               {grandTotal > 0 ? ((cashTotal / grandTotal) * 100).toFixed(1) : "0.0"}%
             </span>
             <span className="text-muted-foreground flex-shrink-0 w-20 text-right">
-              ${cashTotal.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+              {currencySymbol}{(cashTotal * fxRate).toLocaleString("en-US", { maximumFractionDigits: 0 })}
             </span>
           </div>
         )}

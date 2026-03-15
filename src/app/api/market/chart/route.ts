@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
       days = maxDays
     }
 
-    let endDate = before ? new Date(parseInt(before) * 1000) : new Date()
+    const endDate = before ? new Date(parseInt(before) * 1000) : new Date()
 
     // For intraday intervals, clamp the entire date range to Yahoo's allowed window
     if (maxDays) {

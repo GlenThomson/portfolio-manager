@@ -42,8 +42,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid mapping JSON" }, { status: 400 })
   }
 
-  if (!mapping.symbol || !mapping.quantity || !mapping.price) {
-    return NextResponse.json({ error: "symbol, quantity, and price mappings are required" }, { status: 400 })
+  if (!mapping.symbol || !mapping.quantity || (!mapping.price && !mapping.totalCost)) {
+    return NextResponse.json({ error: "symbol, quantity, and price (or total cost) mappings are required" }, { status: 400 })
   }
 
   const { rows, errors } = parseCSVWithMapping(csvText, mapping, cashMapping)

@@ -12,6 +12,7 @@ export interface ColumnMapping {
   action?: string      // optional — column name for buy/sell/dividend
   date?: string        // optional — column name for transaction date
   fees?: string        // optional — column name for fees
+  totalCost?: string   // optional — column for total dollar cost (used to calculate avg cost = totalCost / quantity)
 }
 
 /** Columns mapped as cash balances (header → currency code) */
@@ -102,7 +103,15 @@ export function parseCSVWithMapping(
 
     const symbolVal = raw[mapping.symbol]?.trim().toUpperCase()
     const qtyVal = parseFloat(raw[mapping.quantity] ?? "")
-    const priceVal = parseFloat(raw[mapping.price] ?? "")
+    let priceVal = mapping.price ? parseFloat(raw[mapping.price] ?? "") : 0
+
+    // If totalCost column is mapped, calculate avg cost = totalCost / quantity (overrides price)
+    if (mapping.totalCost) {
+      const totalCostVal = parseFloat(raw[mapping.totalCost] ?? "")
+      if (!isNaN(totalCostVal) && totalCostVal > 0 && qtyVal > 0) {
+        priceVal = totalCostVal / qtyVal
+      }
+    }
 
     if (!symbolVal) {
       errors.push(`Row ${rowNum}: Missing symbol`)
