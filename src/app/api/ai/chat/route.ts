@@ -3,7 +3,7 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
 import { z } from "zod"
 import { eq, and } from "drizzle-orm"
 import { systemPrompt } from "@/lib/ai/system-prompt"
-import { getQuote, searchSymbols, getChart } from "@/lib/market/yahoo"
+import { getQuote, searchSymbols, getChart, getNews as getYahooNews } from "@/lib/market/yahoo"
 import {
   computeRSI,
   computeMACD,
@@ -12,6 +12,10 @@ import {
   computeBollingerBands,
   computeATR,
 } from "@/lib/market/technicals"
+import {
+  getCompanyNews,
+  isFinnhubConfigured,
+} from "@/lib/market/finnhub"
 import { db } from "@/lib/db"
 import {
   portfolios,
@@ -550,6 +554,115 @@ export async function POST(req: Request) {
             }
           } catch (error) {
             return { error: `Failed to compute technicals for ${symbol}: ${String(error)}` }
+          }
+        },
+      }),
+
+      getNews: tool({
+        description:
+          "Fetch the latest news headlines and summaries for a stock symbol. Uses Finnhub if available, otherwise Yahoo Finance.",
+        parameters: z.object({
+          symbol: z
+            .string()
+            .describe("The stock ticker symbol to get news for (e.g. AAPL)"),
+        }),
+        execute: async ({ symbol }) => {
+          try {
+            const upperSymbol = symbol.toUpperCase()
+
+            // Try Finnhub first
+            if (isFinnhubConfigured()) {
+              try {
+                const articles = await getCompanyNews(upperSymbol, 7)
+                if (articles.length > 0) {
+                  return {
+                    symbol: upperSymbol,
+                    source: "finnhub",
+                    articles: articles.slice(0, 10).map((a) => ({
+                      headline: a.headline,
+                      summary: a.summary,
+                      source: a.source,
+                      url: a.url,
+                      datetime: new Date(a.datetime * 1000).toISOString(),
+                    })),
+                  }
+                }
+              } catch {
+                // Fall through to Yahoo
+              }
+            }
+
+            // Fallback to Yahoo
+            const yahooNews = await getYahooNews(upperSymbol)
+            return {
+              symbol: upperSymbol,
+              source: "yahoo",
+              articles: yahooNews.slice(0, 10).map((a: { title: string; publisher: string; link: string; publishedAt: string }) => ({
+                headline: a.title,
+                summary: "",
+                source: a.publisher,
+                url: a.link,
+                datetime: a.publishedAt,
+              })),
+            }
+          } catch {
+            return { error: `Could not fetch news for ${symbol}` }
+          }
+        },
+      }),
+
+      analyzeSentiment: tool({
+        description:
+          "Analyze news sentiment for a stock. Fetches recent news headlines and returns an AI-ready sentiment assessment with key themes. The AI should interpret the returned headlines and provide its own bullish/bearish/neutral assessment.",
+        parameters: z.object({
+          symbol: z
+            .string()
+            .describe("The stock ticker symbol to analyze sentiment for (e.g. AAPL)"),
+        }),
+        execute: async ({ symbol }) => {
+          try {
+            const upperSymbol = symbol.toUpperCase()
+            let headlines: string[] = []
+
+            // Try Finnhub first
+            if (isFinnhubConfigured()) {
+              try {
+                const articles = await getCompanyNews(upperSymbol, 7)
+                headlines = articles
+                  .slice(0, 15)
+                  .map((a) => a.headline)
+                  .filter(Boolean)
+              } catch {
+                // Fall through to Yahoo
+              }
+            }
+
+            // Fallback to Yahoo
+            if (headlines.length === 0) {
+              const yahooNews = await getYahooNews(upperSymbol)
+              headlines = yahooNews
+                .slice(0, 15)
+                .map((a: { title: string }) => a.title)
+                .filter(Boolean)
+            }
+
+            if (headlines.length === 0) {
+              return {
+                symbol: upperSymbol,
+                error: "No recent news found to analyze sentiment",
+              }
+            }
+
+            // Return headlines for the AI to analyze
+            return {
+              symbol: upperSymbol,
+              headlineCount: headlines.length,
+              headlines,
+              instruction:
+                "Based on these headlines, provide your sentiment assessment with: overallSentiment (bullish/bearish/neutral), confidence (low/medium/high), and keyThemes (list of 3-5 key themes from the headlines).",
+            }
+          } catch {
+            return { error: `Could not analyze sentiment for ${symbol}` }
           }
         },
       }),

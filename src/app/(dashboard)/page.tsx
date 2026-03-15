@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Briefcase, TrendingUp, TrendingDown, DollarSign, Plus, ArrowRight, Star, Activity, ArrowUpDown, Receipt } from "lucide-react"
+import { Briefcase, TrendingUp, TrendingDown, DollarSign, Plus, ArrowRight, Star, Activity, ArrowUpDown, Receipt, Newspaper, ExternalLink } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 import { AllocationChart } from "@/components/dashboard/allocation-chart"
@@ -50,6 +50,14 @@ interface Transaction {
   portfolio_id: string
 }
 
+interface MarketNewsItem {
+  title: string
+  publisher: string
+  link: string
+  publishedAt: string
+  thumbnail: string | null
+}
+
 interface TopMover {
   symbol: string
   price: number
@@ -64,6 +72,7 @@ export default function DashboardPage() {
   const [quotes, setQuotes] = useState<Record<string, { price: number; change: number; changePct: number }>>({})
   const [watchlistQuotes, setWatchlistQuotes] = useState<WatchlistQuote[]>([])
   const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [marketNews, setMarketNews] = useState<MarketNewsItem[]>([])
   const [loading, setLoading] = useState(true)
   const [currency, setCurrency] = useState("USD")
   const [fxRate, setFxRate] = useState(1)
@@ -149,6 +158,17 @@ export default function DashboardPage() {
     }
 
     setLoading(false)
+
+    // Fetch market news (non-blocking)
+    try {
+      const newsRes = await fetch("/api/market/news?category=general")
+      if (newsRes.ok) {
+        const newsData = await newsRes.json()
+        if (Array.isArray(newsData)) {
+          setMarketNews(newsData.slice(0, 5))
+        }
+      }
+    } catch {}
   }
 
   // Currency formatting helper
@@ -230,6 +250,21 @@ export default function DashboardPage() {
       .sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct))
       .slice(0, 5)
   })()
+
+  // Time ago helper for news
+  function timeAgo(dateStr: string): string {
+    if (!dateStr) return ""
+    const now = Date.now()
+    const then = new Date(dateStr).getTime()
+    const diff = now - then
+    const minutes = Math.floor(diff / 60000)
+    if (minutes < 60) return `${minutes}m ago`
+    const hours = Math.floor(minutes / 60)
+    if (hours < 24) return `${hours}h ago`
+    const days = Math.floor(hours / 24)
+    if (days < 7) return `${days}d ago`
+    return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+  }
 
   // Portfolio name lookup for transactions
   const portfolioMap = new Map(portfolios.map((p) => [p.id, p.name]))
@@ -558,6 +593,51 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Market News */}
+      {marketNews.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Newspaper className="h-4 w-4" />
+              Market News
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-1">
+              {marketNews.map((item, i) => (
+                <a
+                  key={i}
+                  href={item.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-start justify-between gap-3 p-2 rounded-md hover:bg-accent transition-colors group"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium leading-snug line-clamp-1 group-hover:text-primary transition-colors">
+                      {item.title}
+                    </p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-xs text-muted-foreground">
+                        {item.publisher}
+                      </span>
+                      {item.publishedAt && (
+                        <>
+                          <span className="text-xs text-muted-foreground/50">&middot;</span>
+                          <span className="text-xs text-muted-foreground">
+                            {timeAgo(item.publishedAt)}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <ExternalLink className="h-3.5 w-3.5 mt-1 flex-shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                </a>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Bottom section: Portfolios + Watchlist */}
       <div className="grid gap-4 md:grid-cols-2">
