@@ -3,7 +3,7 @@ import postgres from "postgres"
 import * as schema from "./schema"
 
 function getConnectionString() {
-  if (process.env.DATABASE_URL) return process.env.DATABASE_URL
+  if (process.env.DATABASE_URL) return process.env.DATABASE_URL.trim()
   const password = encodeURIComponent(process.env.DATABASE_PASSWORD ?? "")
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ""
   const projectRef = supabaseUrl.replace("https://", "").replace(".supabase.co", "")
