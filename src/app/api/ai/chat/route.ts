@@ -1,4 +1,5 @@
 import { streamText, tool } from "ai"
+import { google } from "@ai-sdk/google"
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
 import { z } from "zod"
 import { eq, and } from "drizzle-orm"
@@ -29,6 +30,8 @@ import YahooFinance from "yahoo-finance2"
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const yahooFinance = new (YahooFinance as any)({ suppressNotices: ["yahooSurvey"] })
 
+// Gemini 2.0 Flash (free tier) — 1M context, solid tool calling
+// Falls back to Groq if GOOGLE_GENERATIVE_AI_API_KEY is not set
 const groq = createOpenAICompatible({
   name: "groq",
   baseURL: "https://api.groq.com/openai/v1",
@@ -36,6 +39,8 @@ const groq = createOpenAICompatible({
     Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
   },
 })
+
+const useGemini = !!process.env.GOOGLE_GENERATIVE_AI_API_KEY
 
 export const maxDuration = 60
 
@@ -52,7 +57,9 @@ export async function POST(req: Request) {
 
   const result = await streamText({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    model: groq.chatModel("llama-3.3-70b-versatile") as any,
+    model: useGemini
+      ? google("gemini-2.0-flash") as any
+      : groq.chatModel("llama-3.3-70b-versatile") as any,
     system: systemPrompt,
     messages,
     tools: {
@@ -578,10 +585,11 @@ export async function POST(req: Request) {
                   return {
                     symbol: upperSymbol,
                     source: "finnhub",
-                    articles: articles.slice(0, 8).map((a) => ({
+                    articles: articles.slice(0, 10).map((a) => ({
                       headline: a.headline,
-                      summary: a.summary?.slice(0, 200) || "",
+                      summary: a.summary || "",
                       source: a.source,
+                      url: a.url,
                       datetime: new Date(a.datetime * 1000).toISOString(),
                     })),
                   }
@@ -596,9 +604,10 @@ export async function POST(req: Request) {
             return {
               symbol: upperSymbol,
               source: "yahoo",
-              articles: yahooNews.slice(0, 8).map((a: { title: string; publisher: string; link: string; publishedAt: string }) => ({
+              articles: yahooNews.slice(0, 10).map((a: { title: string; publisher: string; link: string; publishedAt: string }) => ({
                 headline: a.title,
                 source: a.publisher,
+                url: a.link,
                 datetime: a.publishedAt,
               })),
             }
