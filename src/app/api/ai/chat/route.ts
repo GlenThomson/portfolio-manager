@@ -1,5 +1,4 @@
 import { streamText, tool } from "ai"
-import { google } from "@ai-sdk/google"
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
 import { z } from "zod"
 import { eq, and } from "drizzle-orm"
@@ -30,8 +29,16 @@ import YahooFinance from "yahoo-finance2"
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const yahooFinance = new (YahooFinance as any)({ suppressNotices: ["yahooSurvey"] })
 
-// Gemini 2.0 Flash (free tier) — 1M context, solid tool calling
+// Gemini via OpenAI-compatible endpoint (free tier, 1M context, solid tool calling)
 // Falls back to Groq if GOOGLE_GENERATIVE_AI_API_KEY is not set
+const gemini = createOpenAICompatible({
+  name: "gemini",
+  baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
+  headers: {
+    Authorization: `Bearer ${process.env.GOOGLE_GENERATIVE_AI_API_KEY}`,
+  },
+})
+
 const groq = createOpenAICompatible({
   name: "groq",
   baseURL: "https://api.groq.com/openai/v1",
@@ -57,8 +64,9 @@ export async function POST(req: Request) {
 
   const result = await streamText({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     model: useGemini
-      ? google("gemini-2.0-flash") as any
+      ? gemini.chatModel("gemini-2.5-flash") as any
       : groq.chatModel("llama-3.3-70b-versatile") as any,
     system: systemPrompt,
     messages,
