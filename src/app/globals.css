@@ -67,3 +67,28 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer utilities {
+  .slim-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.2) transparent;
+  }
+  .slim-scrollbar:hover {
+    scrollbar-color: hsl(var(--muted-foreground) / 0.4) transparent;
+  }
+  /* Webkit (Chrome, Edge, Safari) */
+  .slim-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .slim-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .slim-scrollbar::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted-foreground) / 0.2);
+    border-radius: 3px;
+  }
+  .slim-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground) / 0.4);
+  }
+}

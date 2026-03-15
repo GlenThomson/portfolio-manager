@@ -64,7 +64,7 @@ export default function ChatPage() {
 
       <Card className="flex-1 flex flex-col overflow-hidden border-border/50">
         {/* Messages area */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 slim-scrollbar">
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full text-center gap-6">
               <div>
@@ -118,7 +118,7 @@ export default function ChatPage() {
                   "placeholder:text-muted-foreground",
                   "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                   "disabled:cursor-not-allowed disabled:opacity-50",
-                  "min-h-[44px] max-h-[150px]"
+                  "min-h-[44px] max-h-[150px] slim-scrollbar"
                 )}
                 rows={1}
                 disabled={isLoading}
