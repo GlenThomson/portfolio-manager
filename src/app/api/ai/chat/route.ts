@@ -4,6 +4,13 @@ import { z } from "zod"
 import { eq, and } from "drizzle-orm"
 import { systemPrompt } from "@/lib/ai/system-prompt"
 import { getQuote, searchSymbols } from "@/lib/market/yahoo"
+import {
+  scanTopGainers,
+  scanTopLosers,
+  scanUnusualVolume,
+  scanSectorPerformance,
+  scan52WeekHighLow,
+} from "@/lib/market/scanner"
 import { db } from "@/lib/db"
 import {
   portfolios,
@@ -372,6 +379,47 @@ export async function POST(req: Request) {
             return {
               error: `Failed to fetch position detail for ${symbol}: ${String(error)}`,
             }
+          }
+        },
+      }),
+
+      scanMarket: tool({
+        description:
+          "Scan the market for unusual activity and opportunities. Can find top gainers, top losers, unusual volume, sector performance, and stocks near 52-week highs or lows.",
+        parameters: z.object({
+          scanType: z
+            .enum([
+              "unusual_volume",
+              "top_gainers",
+              "top_losers",
+              "sector_performance",
+              "52week_highs_lows",
+            ])
+            .describe("The type of market scan to perform"),
+          count: z
+            .number()
+            .optional()
+            .describe("Number of results to return (default 10, max 50)"),
+        }),
+        execute: async ({ scanType, count }) => {
+          try {
+            const n = Math.min(count ?? 10, 50)
+            switch (scanType) {
+              case "top_gainers":
+                return { scanType, results: await scanTopGainers(n) }
+              case "top_losers":
+                return { scanType, results: await scanTopLosers(n) }
+              case "unusual_volume":
+                return { scanType, results: await scanUnusualVolume(n) }
+              case "sector_performance":
+                return { scanType, results: await scanSectorPerformance() }
+              case "52week_highs_lows":
+                return { scanType, results: await scan52WeekHighLow() }
+              default:
+                return { error: `Unknown scan type: ${scanType}` }
+            }
+          } catch {
+            return { error: `Market scan failed for ${scanType}` }
           }
         },
       }),

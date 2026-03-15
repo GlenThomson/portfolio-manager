@@ -20,7 +20,7 @@ const navItems = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
   { label: "Portfolio", href: "/portfolio", icon: Briefcase },
   { label: "Watchlist", href: "/watchlist", icon: Star },
-  { label: "Markets", href: "/stock/AAPL", icon: BarChart3 },
+  { label: "Markets", href: "/markets", icon: BarChart3 },
   { label: "AI Chat", href: "/chat", icon: MessageSquare },
 ]
 
