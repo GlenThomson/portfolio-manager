@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { parseCSVWithMapping, parseCSVHeaders } from "@/lib/brokers/csv-parser"
+import { parseCSVWithMapping, parseCSVHeaders, detectBrokerFormat } from "@/lib/brokers/csv-parser"
 import type { ColumnMapping, CashMapping } from "@/lib/brokers/csv-parser"
 import { createClient, getServerUserId } from "@/lib/supabase/server"
 
@@ -14,6 +14,7 @@ export async function POST(request: NextRequest) {
   const portfolioId = formData.get("portfolioId") as string | null
   const mappingJson = formData.get("mapping") as string | null
   const cashMappingJson = formData.get("cashMapping") as string | null
+  const brokerParam = formData.get("broker") as string | null
   const replaceMode = formData.get("replace") === "true"
 
   if (!file) {
@@ -25,7 +26,9 @@ export async function POST(request: NextRequest) {
   // Step 1: No mapping provided → return headers + preview for the UI
   if (!mappingJson) {
     const { headers, preview } = parseCSVHeaders(csvText)
-    return NextResponse.json({ headers, preview })
+    // Also include detected broker info for the client
+    const detection = detectBrokerFormat(headers)
+    return NextResponse.json({ headers, preview, detectedBroker: detection.broker })
   }
 
   // Step 2: Mapping provided → parse and import
@@ -40,6 +43,16 @@ export async function POST(request: NextRequest) {
     if (cashMappingJson) cashMapping = JSON.parse(cashMappingJson)
   } catch {
     return NextResponse.json({ error: "Invalid mapping JSON" }, { status: 400 })
+  }
+
+  // When broker is specified, auto-detect and apply broker-specific mapping if needed
+  if (brokerParam === "sharesies") {
+    const { headers: csvHeaders } = parseCSVHeaders(csvText)
+    const detection = detectBrokerFormat(csvHeaders)
+    if (detection.broker === "sharesies") {
+      // Override with detected mapping to ensure correct columns
+      mapping = detection.suggestedMapping
+    }
   }
 
   if (!mapping.symbol || !mapping.quantity || (!mapping.price && !mapping.totalCost)) {

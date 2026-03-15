@@ -10,7 +10,8 @@ import {
 } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { Upload, RefreshCw, CheckCircle2, AlertCircle, Loader2, ArrowLeft, ChevronDown, ChevronRight } from "lucide-react"
+import { Upload, RefreshCw, CheckCircle2, AlertCircle, Loader2, ArrowLeft, ChevronDown, ChevronRight, Info } from "lucide-react"
+import type { BrokerFormat } from "@/lib/brokers/csv-parser"
 
 interface BrokerConnectProps {
   open: boolean
@@ -68,6 +69,7 @@ export function BrokerConnectDialog({
   const [showSkipped, setShowSkipped] = useState(false)
   const [cashColumns, setCashColumns] = useState<Record<string, string>>({}) // header → currency
   const [replaceImport, setReplaceImport] = useState(false)
+  const [detectedBroker, setDetectedBroker] = useState<BrokerFormat | null>(null)
 
   function resetCSV() {
     setCsvStep("upload")
@@ -78,6 +80,7 @@ export function BrokerConnectDialog({
     setShowSkipped(false)
     setCashColumns({})
     setReplaceImport(false)
+    setDetectedBroker(null)
     setResult(null)
     setError(null)
   }
@@ -100,6 +103,73 @@ export function BrokerConnectDialog({
       }
     }
     return cash
+  }
+
+  // Auto-detect broker format and build mapping using known broker signatures
+  function autoDetectMappingWithBroker(headers: string[]): { mapping: Record<string, string>; broker: BrokerFormat } {
+    // Try formal broker detection first
+    const detection = detectBrokerFormatClient(headers)
+
+    if (detection.broker !== "generic") {
+      // Convert ColumnMapping (field → header) to our UI format (header → field)
+      const result: Record<string, string> = {}
+      const m = detection.suggestedMapping
+      if (m.symbol) result[m.symbol] = "symbol"
+      if (m.quantity) result[m.quantity] = "quantity"
+      if (m.price) result[m.price] = "price"
+      if (m.totalCost) result[m.totalCost] = "totalCost"
+      if (m.action) result[m.action] = "action"
+      if (m.date) result[m.date] = "date"
+      if (m.fees) result[m.fees] = "fees"
+      return { mapping: result, broker: detection.broker }
+    }
+
+    // Fall back to generic heuristic detection
+    return { mapping: autoDetectMapping(headers), broker: "generic" }
+  }
+
+  // Lightweight client-side broker detection (mirrors server-side detectBrokerFormat)
+  function detectBrokerFormatClient(headers: string[]): { broker: BrokerFormat; suggestedMapping: { symbol: string; quantity: string; price: string; totalCost?: string; action?: string; date?: string; fees?: string } } {
+    const lower = headers.map((h) => h.toLowerCase())
+
+    // Sharesies
+    if (
+      lower.some((h) => h.includes("investment ticker symbol")) &&
+      lower.some((h) => h.includes("ending shareholding"))
+    ) {
+      const symbolCol = headers.find((h) => h.toLowerCase().includes("investment ticker symbol")) ?? ""
+      const quantityCol = headers.find((h) => h.toLowerCase().includes("ending shareholding")) ?? ""
+      const totalCostCol = headers.find((h) => h.toLowerCase().includes("dollar value of shares purchased")) ?? ""
+      const feesCol = headers.find((h) => h.toLowerCase().includes("transaction fees")) ?? ""
+      return {
+        broker: "sharesies",
+        suggestedMapping: {
+          symbol: symbolCol,
+          quantity: quantityCol,
+          price: "",
+          totalCost: totalCostCol,
+          fees: feesCol || undefined,
+        },
+      }
+    }
+
+    // IBKR
+    if (
+      lower.some((h) => h === "financial instrument" || h === "asset category") &&
+      lower.some((h) => h === "symbol") &&
+      lower.some((h) => h === "quantity" || h === "position")
+    ) {
+      const symbolCol = headers.find((h) => h.toLowerCase() === "symbol") ?? ""
+      const quantityCol = headers.find((h) => h.toLowerCase() === "quantity" || h.toLowerCase() === "position") ?? ""
+      const priceCol = headers.find((h) => h.toLowerCase() === "average cost" || h.toLowerCase() === "cost basis") ?? ""
+      const feesCol = headers.find((h) => h.toLowerCase() === "commission") ?? ""
+      return {
+        broker: "ibkr",
+        suggestedMapping: { symbol: symbolCol, quantity: quantityCol, price: priceCol, fees: feesCol || undefined },
+      }
+    }
+
+    return { broker: "generic", suggestedMapping: { symbol: "", quantity: "", price: "" } }
   }
 
   // Auto-detect common column names — order matters: check fees before action
@@ -192,7 +262,9 @@ export function BrokerConnectDialog({
       const { headers, preview } = await res.json()
       setCsvHeaders(headers)
       setCsvPreview(preview)
-      setColumnMap(autoDetectMapping(headers))
+      const { mapping: detected, broker } = autoDetectMappingWithBroker(headers)
+      setColumnMap(detected)
+      setDetectedBroker(broker)
       setCashColumns(detectCashColumns(headers))
       setShowSkipped(false)
       setCsvStep("map")
@@ -230,6 +302,9 @@ export function BrokerConnectDialog({
       }
       if (replaceImport) {
         formData.append("replace", "true")
+      }
+      if (detectedBroker && detectedBroker !== "generic") {
+        formData.append("broker", detectedBroker)
       }
 
       const res = await fetch("/api/brokers/csv-import", {
@@ -421,6 +496,16 @@ export function BrokerConnectDialog({
                     We detected {mappedHeaders.length} field{mappedHeaders.length !== 1 ? "s" : ""}. Review the mapping below.
                   </p>
                 </div>
+
+                {/* Broker detection banner */}
+                {detectedBroker && detectedBroker !== "generic" && (
+                  <div className="flex items-center gap-2 rounded-md bg-blue-500/10 border border-blue-500/20 px-3 py-2">
+                    <Info className="h-4 w-4 text-blue-500 shrink-0" />
+                    <p className="text-sm text-blue-500">
+                      Detected <span className="font-medium">{detectedBroker === "sharesies" ? "Sharesies" : "Interactive Brokers"}</span> format — columns auto-mapped
+                    </p>
+                  </div>
+                )}
 
                 {/* Mapped fields — shown as clean cards */}
                 <div className="space-y-2">

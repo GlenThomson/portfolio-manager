@@ -17,7 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Plus, TrendingUp, TrendingDown, DollarSign, Briefcase, Upload, Wallet } from "lucide-react"
+import { Plus, TrendingUp, TrendingDown, DollarSign, Briefcase, Upload, Wallet, AlertTriangle, Loader2 } from "lucide-react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { BrokerConnectDialog } from "@/components/portfolio/broker-connect"
@@ -49,6 +49,7 @@ export default function PortfolioDetailPage() {
   const [ibkrConnected, setIbkrConnected] = useState(false)
   const [form, setForm] = useState<TransactionForm>({ symbol: "", action: "buy", quantity: "", price: "" })
   const [loading, setLoading] = useState(true)
+  const [fixingCosts, setFixingCosts] = useState(false)
   const searchParams = useSearchParams()
 
   useEffect(() => {
@@ -184,6 +185,24 @@ export default function PortfolioDetailPage() {
     setForm({ symbol: "", action: "buy", quantity: "", price: "" })
     setDialogOpen(false)
     fetchData()
+  }
+
+  async function fixZeroCosts() {
+    setFixingCosts(true)
+    try {
+      const res = await fetch("/api/brokers/fix-costs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ portfolioId }),
+      })
+      if (res.ok) {
+        fetchData()
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setFixingCosts(false)
+    }
   }
 
   // Split positions into stocks and cash
@@ -368,6 +387,30 @@ export default function PortfolioDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Zero-cost positions warning */}
+      {stockPositions.some((p) => parseFloat(p.average_cost) === 0) && (
+        <div className="flex items-center gap-3 rounded-md bg-yellow-500/10 border border-yellow-500/20 px-4 py-3">
+          <AlertTriangle className="h-4 w-4 text-yellow-500 shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm text-yellow-500 font-medium">
+              Some positions have $0 average cost
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              This usually happens when CSV columns were mapped incorrectly. You can fix this from transaction data or re-import with correct mapping.
+            </p>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <Button variant="outline" size="sm" onClick={fixZeroCosts} disabled={fixingCosts}>
+              {fixingCosts ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+              Fix Costs
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setImportDialogOpen(true)}>
+              Re-import
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Stock Positions table */}
       {stockPositions.length === 0 && cashPositions.length === 0 ? (
