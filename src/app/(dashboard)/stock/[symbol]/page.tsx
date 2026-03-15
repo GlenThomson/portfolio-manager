@@ -10,20 +10,21 @@ import { Star, Plus, Loader2 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { getCurrentUserId } from "@/lib/supabase/user"
 import { cn } from "@/lib/utils"
+import { useCurrency } from "@/hooks/useCurrency"
 import type { Quote, OHLC } from "@/types/market"
-
-function formatNum(n: number) {
-  if (n >= 1e12) return `$${(n / 1e12).toFixed(2)}T`
-  if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`
-  if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}M`
-  return n.toLocaleString()
-}
 
 function formatVol(n: number) {
   if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`
   if (n >= 1e6) return `${(n / 1e6).toFixed(2)}M`
   if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`
   return n.toFixed(0)
+}
+
+function formatLargeValue(n: number, symbol: string) {
+  if (n >= 1e12) return `${symbol}${(n / 1e12).toFixed(2)}T`
+  if (n >= 1e9) return `${symbol}${(n / 1e9).toFixed(2)}B`
+  if (n >= 1e6) return `${symbol}${(n / 1e6).toFixed(2)}M`
+  return n.toLocaleString()
 }
 
 export default function StockDetailPage() {
@@ -38,6 +39,7 @@ export default function StockDetailPage() {
   const [watchlistLoading, setWatchlistLoading] = useState(false)
   const [alerts, setAlerts] = useState<Array<{ id: string; price: number; condition: string }>>([])
   const loadingMoreRef = useRef(false)
+  const { currencySymbol, fxRate, fmt } = useCurrency()
 
   const handleLoadMore = useCallback(async (beforeTimestamp: number) => {
     if (loadingMoreRef.current) return
@@ -240,14 +242,14 @@ export default function StockDetailPage() {
               <span className="text-sm text-muted-foreground">{quote.shortName}</span>
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-bold">${quote.regularMarketPrice.toFixed(2)}</span>
+              <span className="text-2xl font-bold">{fmt(quote.regularMarketPrice)}</span>
               <span className={cn("text-sm font-medium", isPositive ? "text-[#26a69a]" : "text-[#ef5350]")}>
-                {isPositive ? "+" : ""}{quote.regularMarketChange.toFixed(2)} ({isPositive ? "+" : ""}{quote.regularMarketChangePercent.toFixed(2)}%)
+                {isPositive ? "+" : ""}{fmt(quote.regularMarketChange)} ({isPositive ? "+" : ""}{quote.regularMarketChangePercent.toFixed(2)}%)
               </span>
             </div>
             <div className="flex items-center gap-4 text-xs text-muted-foreground">
               <span>Vol <strong className="text-foreground">{formatVol(quote.regularMarketVolume)}</strong></span>
-              <span>Mkt Cap <strong className="text-foreground">{formatNum(quote.marketCap)}</strong></span>
+              <span>Mkt Cap <strong className="text-foreground">{formatLargeValue(quote.marketCap * fxRate, currencySymbol)}</strong></span>
             </div>
           </>
         ) : (
@@ -302,14 +304,14 @@ export default function StockDetailPage() {
       {quote && (
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-px rounded-md overflow-hidden" style={{ background: "#2a2e39" }}>
           {[
-            { label: "Prev Close", value: `$${quote.regularMarketPreviousClose.toFixed(2)}` },
-            { label: "Open", value: `$${quote.regularMarketOpen.toFixed(2)}` },
-            { label: "Day Low", value: `$${quote.regularMarketDayLow.toFixed(2)}` },
-            { label: "Day High", value: `$${quote.regularMarketDayHigh.toFixed(2)}` },
-            { label: "52W Low", value: `$${quote.fiftyTwoWeekLow.toFixed(2)}` },
-            { label: "52W High", value: `$${quote.fiftyTwoWeekHigh.toFixed(2)}` },
+            { label: "Prev Close", value: fmt(quote.regularMarketPreviousClose) },
+            { label: "Open", value: fmt(quote.regularMarketOpen) },
+            { label: "Day Low", value: fmt(quote.regularMarketDayLow) },
+            { label: "Day High", value: fmt(quote.regularMarketDayHigh) },
+            { label: "52W Low", value: fmt(quote.fiftyTwoWeekLow) },
+            { label: "52W High", value: fmt(quote.fiftyTwoWeekHigh) },
             { label: "Volume", value: formatVol(quote.regularMarketVolume) },
-            { label: "Mkt Cap", value: formatNum(quote.marketCap) },
+            { label: "Mkt Cap", value: formatLargeValue(quote.marketCap * fxRate, currencySymbol) },
           ].map((stat) => (
             <div key={stat.label} className="px-3 py-2.5" style={{ background: "#131722" }}>
               <div className="text-[10px] uppercase tracking-wider" style={{ color: "#787b86" }}>{stat.label}</div>

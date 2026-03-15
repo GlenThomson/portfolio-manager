@@ -21,6 +21,7 @@ import { Plus, TrendingUp, TrendingDown, DollarSign, Briefcase, Upload, Wallet }
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { BrokerConnectDialog } from "@/components/portfolio/broker-connect"
+import { useCurrency } from "@/hooks/useCurrency"
 
 interface Position {
   id: string
@@ -50,6 +51,7 @@ export default function PortfolioDetailPage() {
   const [form, setForm] = useState<TransactionForm>({ symbol: "", action: "buy", quantity: "", price: "" })
   const [loading, setLoading] = useState(true)
   const searchParams = useSearchParams()
+  const { fmt } = useCurrency()
 
   useEffect(() => {
     fetchData()
@@ -323,7 +325,7 @@ export default function PortfolioDetailPage() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${totalValue.toFixed(2)}</div>
+            <div className="text-2xl font-bold">{fmt(totalValue)}</div>
           </CardContent>
         </Card>
         <Card>
@@ -337,7 +339,7 @@ export default function PortfolioDetailPage() {
           </CardHeader>
           <CardContent>
             <div className={`text-2xl font-bold ${totalPnl >= 0 ? "text-green-500" : "text-red-500"}`}>
-              {totalPnl >= 0 ? "+" : ""}${totalPnl.toFixed(2)}
+              {totalPnl >= 0 ? "+" : "-"}{fmt(Math.abs(totalPnl))}
             </div>
             <p className={`text-xs ${totalPnl >= 0 ? "text-green-500" : "text-red-500"}`}>
               {totalPnlPct >= 0 ? "+" : ""}{totalPnlPct.toFixed(2)}%
@@ -351,7 +353,7 @@ export default function PortfolioDetailPage() {
               <Wallet className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">${totalCash.toFixed(2)}</div>
+              <div className="text-2xl font-bold">{fmt(totalCash)}</div>
               <p className="text-xs text-muted-foreground">
                 {cashPositions.length} currenc{cashPositions.length === 1 ? "y" : "ies"}
               </p>
@@ -429,17 +431,17 @@ export default function PortfolioDetailPage() {
                         </Link>
                       </TableCell>
                       <TableCell className="text-right">{qty}</TableCell>
-                      <TableCell className="text-right">${avgCost.toFixed(2)}</TableCell>
+                      <TableCell className="text-right">{fmt(avgCost)}</TableCell>
                       <TableCell className="text-right">
-                        {price > 0 ? `$${price.toFixed(2)}` : "—"}
+                        {price > 0 ? fmt(price) : "—"}
                       </TableCell>
                       <TableCell className="text-right">
-                        {price > 0 ? `$${marketValue.toFixed(2)}` : "—"}
+                        {price > 0 ? fmt(marketValue) : "—"}
                       </TableCell>
                       <TableCell className={`text-right ${pnl >= 0 ? "text-green-500" : "text-red-500"}`}>
                         {price > 0 ? (
                           <>
-                            {pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}
+                            {pnl >= 0 ? "+" : "-"}{fmt(Math.abs(pnl))}
                             <br />
                             <span className="text-xs">
                               {pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(2)}%
@@ -489,14 +491,14 @@ export default function PortfolioDetailPage() {
                   return (
                     <TableRow key={pos.id}>
                       <TableCell className="font-medium">{currency}</TableCell>
-                      <TableCell className="text-right">${balance.toFixed(2)}</TableCell>
+                      <TableCell className="text-right">{fmt(balance)}</TableCell>
                     </TableRow>
                   )
                 })}
                 {cashPositions.length > 1 && (
                   <TableRow className="font-medium">
                     <TableCell>Total</TableCell>
-                    <TableCell className="text-right">${totalCash.toFixed(2)}</TableCell>
+                    <TableCell className="text-right">{fmt(totalCash)}</TableCell>
                   </TableRow>
                 )}
               </TableBody>

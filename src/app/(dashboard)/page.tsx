@@ -17,6 +17,7 @@ import { Briefcase, TrendingUp, TrendingDown, DollarSign, Plus, ArrowRight, Star
 import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 import { AllocationChart } from "@/components/dashboard/allocation-chart"
+import { useCurrency } from "@/hooks/useCurrency"
 
 interface Portfolio {
   id: string
@@ -65,8 +66,7 @@ export default function DashboardPage() {
   const [watchlistQuotes, setWatchlistQuotes] = useState<WatchlistQuote[]>([])
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
-  const [currency, setCurrency] = useState("USD")
-  const [fxRate, setFxRate] = useState(1)
+  const { currencySymbol, fxRate, fmt } = useCurrency()
 
   useEffect(() => {
     fetchDashboardData()
@@ -77,26 +77,12 @@ export default function DashboardPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
-    const [portfolioRes, positionsRes, watchlistRes, transactionsRes, profileRes] = await Promise.all([
+    const [portfolioRes, positionsRes, watchlistRes, transactionsRes] = await Promise.all([
       supabase.from("portfolios").select("id, name, is_paper").eq("user_id", user.id).order("created_at", { ascending: false }),
       supabase.from("portfolio_positions").select("symbol, quantity, average_cost, portfolio_id, asset_type").eq("user_id", user.id).is("closed_at", null),
       supabase.from("watchlists").select("symbols").eq("user_id", user.id).limit(1).single(),
       supabase.from("transactions").select("id, symbol, action, quantity, price, executed_at, portfolio_id").eq("user_id", user.id).order("executed_at", { ascending: false }).limit(5),
-      supabase.from("user_profiles").select("settings").eq("user_id", user.id).single(),
     ])
-
-    // Get user's preferred currency and fetch exchange rate
-    const userCurrency = (profileRes.data?.settings as { defaultCurrency?: string })?.defaultCurrency ?? "USD"
-    setCurrency(userCurrency)
-    if (userCurrency !== "USD") {
-      try {
-        const fxRes = await fetch(`/api/market/currency?from=USD&to=${userCurrency}`)
-        if (fxRes.ok) {
-          const fxData = await fxRes.json()
-          setFxRate(fxData.rate)
-        }
-      } catch {}
-    }
 
     const portfolioData = portfolioRes.data ?? []
     const positionData = positionsRes.data ?? []
@@ -151,9 +137,6 @@ export default function DashboardPage() {
     setLoading(false)
   }
 
-  // Currency formatting helper
-  const currencySymbol = currency === "USD" ? "$" : currency === "NZD" ? "NZ$" : currency === "AUD" ? "A$" : currency === "GBP" ? "£" : currency === "EUR" ? "€" : "$"
-  const fmt = (val: number) => `${currencySymbol}${(val * fxRate).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   // Separate stock and cash positions
   const stockPositions = positions.filter((p) => p.asset_type !== "cash")
   const cashPositions = positions.filter((p) => p.asset_type === "cash")
