@@ -10,6 +10,7 @@ export interface Filing {
   accessionNumber: string
   primaryDocument: string
   description: string
+  cik: string // Company CIK (unpadded) for constructing correct SEC URLs
 }
 
 // In-memory CIK cache: ticker -> CIK number (zero-padded to 10 digits)
@@ -90,6 +91,8 @@ export async function getFilings(
   count: number = 20
 ): Promise<Filing[]> {
   const cik = await getCIK(ticker)
+  // Unpadded CIK for SEC archive URLs
+  const cikNum = String(parseInt(cik, 10))
   const url = `${SUBMISSIONS_BASE}/CIK${cik}.json`
 
   const data = await fetchSecJson<{
@@ -125,6 +128,7 @@ export async function getFilings(
       accessionNumber: recent.accessionNumber[i],
       primaryDocument: recent.primaryDocument[i],
       description: recent.primaryDocDescription[i] || form,
+      cik: cikNum,
     })
   }
 
@@ -180,9 +184,11 @@ export async function getFilingDocument(
 
 /**
  * Get the SEC EDGAR URL for a filing.
+ * @param cik - The company CIK number (not the filing agent CIK from accession number)
  */
-export function getFilingUrl(accessionNumber: string, primaryDocument: string): string {
+export function getFilingUrl(accessionNumber: string, primaryDocument: string, cik?: string): string {
   const accessionClean = accessionNumber.replace(/-/g, "")
-  const cikNum = accessionNumber.split("-")[0].replace(/^0+/, "")
+  // Use provided company CIK; fall back to accession prefix (less reliable)
+  const cikNum = cik ?? accessionNumber.split("-")[0].replace(/^0+/, "")
   return `${ARCHIVES_BASE}/${cikNum}/${accessionClean}/${primaryDocument}`
 }

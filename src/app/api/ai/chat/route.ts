@@ -712,7 +712,7 @@ export async function POST(req: Request) {
 
       readFiling: tool({
         description:
-          "Fetch and read the text content of a specific SEC filing. Use getFilings first to find the accession number and document name. Returns truncated text that you can summarise for the user.",
+          "Fetch and read the text content of a specific SEC filing. Use getFilings first to find the accession number, document name, and CIK. Returns truncated text that you can summarise for the user.",
         parameters: z.object({
           accessionNumber: z
             .string()
@@ -724,12 +724,19 @@ export async function POST(req: Request) {
             .describe(
               "The primary document filename (e.g. aapl-20240928.htm)"
             ),
+          symbol: z
+            .string()
+            .optional()
+            .describe(
+              "The stock ticker symbol — used to resolve the correct company CIK for the filing URL"
+            ),
         }),
-        execute: async ({ accessionNumber, primaryDocument }) => {
+        execute: async ({ accessionNumber, primaryDocument, symbol }) => {
           try {
             const content = await getFilingDocument(
               accessionNumber,
-              primaryDocument
+              primaryDocument,
+              symbol
             )
             // Truncate to 30k characters for AI context
             const truncated =

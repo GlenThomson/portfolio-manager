@@ -9,6 +9,7 @@ interface Filing {
   accessionNumber: string
   primaryDocument: string
   description: string
+  cik?: string
 }
 
 function filingTypeColor(type: string): string {
@@ -23,10 +24,11 @@ function formatDate(dateStr: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
 }
 
-function getSecUrl(accessionNumber: string, primaryDocument: string): string {
-  const accessionClean = accessionNumber.replace(/-/g, "")
-  const cikNum = accessionNumber.split("-")[0].replace(/^0+/, "")
-  return `https://www.sec.gov/Archives/edgar/data/${cikNum}/${accessionClean}/${primaryDocument}`
+function getSecUrl(filing: Filing): string {
+  const accessionClean = filing.accessionNumber.replace(/-/g, "")
+  // Use the company CIK from the API; fall back to accession prefix (less reliable)
+  const cikNum = filing.cik ?? filing.accessionNumber.split("-")[0].replace(/^0+/, "")
+  return `https://www.sec.gov/Archives/edgar/data/${cikNum}/${accessionClean}/${filing.primaryDocument}`
 }
 
 export function SecFilings({ symbol }: { symbol: string }) {
@@ -75,7 +77,7 @@ export function SecFilings({ symbol }: { symbol: string }) {
         {filings.map((filing, i) => (
           <a
             key={i}
-            href={getSecUrl(filing.accessionNumber, filing.primaryDocument)}
+            href={getSecUrl(filing)}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-slate-800/50 group"
