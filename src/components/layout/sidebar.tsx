@@ -12,6 +12,7 @@ import {
   Bell,
   Settings,
   TrendingUp,
+  DollarSign,
 } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
@@ -21,6 +22,7 @@ const navItems = [
   { label: "Portfolio", href: "/portfolio", icon: Briefcase },
   { label: "Watchlist", href: "/watchlist", icon: Star },
   { label: "Markets", href: "/stock/AAPL", icon: BarChart3 },
+  { label: "Income", href: "/income", icon: DollarSign },
   { label: "AI Chat", href: "/chat", icon: MessageSquare },
 ]
 
