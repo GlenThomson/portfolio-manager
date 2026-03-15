@@ -16,6 +16,7 @@ import {
   getCompanyNews,
   isFinnhubConfigured,
 } from "@/lib/market/finnhub"
+import { getFilings, getFilingDocument } from "@/lib/market/edgar"
 import { db } from "@/lib/db"
 import {
   portfolios,
@@ -573,6 +574,34 @@ export async function POST(req: Request) {
         },
       }),
 
+      getFilings: tool({
+        description:
+          "Fetch a list of recent SEC filings (10-K, 10-Q, 8-K, etc.) for a given stock symbol. Use this to find what filings are available before reading one.",
+        parameters: z.object({
+          symbol: z.string().describe("The stock ticker symbol (e.g. AAPL, MSFT)"),
+          filingType: z
+            .string()
+            .optional()
+            .describe("Optional filing type filter: 10-K, 10-Q, 8-K, etc."),
+          count: z
+            .number()
+            .optional()
+            .describe("Number of filings to return (default 10)"),
+        }),
+        execute: async ({ symbol, filingType, count }) => {
+          try {
+            const filings = await getFilings(
+              symbol.toUpperCase(),
+              filingType,
+              count ?? 10
+            )
+            return { symbol: symbol.toUpperCase(), filings }
+          } catch {
+            return { error: `Could not fetch filings for ${symbol}` }
+          }
+        },
+      }),
+
       getNews: tool({
         description:
           "Fetch the latest news headlines and summaries for a stock symbol. Uses Finnhub if available, otherwise Yahoo Finance.",
@@ -677,6 +706,54 @@ export async function POST(req: Request) {
             }
           } catch {
             return { error: `Could not analyze sentiment for ${symbol}` }
+          }
+        },
+      }),
+
+      readFiling: tool({
+        description:
+          "Fetch and read the text content of a specific SEC filing. Use getFilings first to find the accession number, document name, and CIK. Returns truncated text that you can summarise for the user.",
+        parameters: z.object({
+          accessionNumber: z
+            .string()
+            .describe(
+              "The accession number of the filing (e.g. 0000320193-24-000123)"
+            ),
+          primaryDocument: z
+            .string()
+            .describe(
+              "The primary document filename (e.g. aapl-20240928.htm)"
+            ),
+          symbol: z
+            .string()
+            .optional()
+            .describe(
+              "The stock ticker symbol — used to resolve the correct company CIK for the filing URL"
+            ),
+        }),
+        execute: async ({ accessionNumber, primaryDocument, symbol }) => {
+          try {
+            const content = await getFilingDocument(
+              accessionNumber,
+              primaryDocument,
+              symbol
+            )
+            // Truncate to 30k characters for AI context
+            const truncated =
+              content.length > 30000
+                ? content.slice(0, 30000) +
+                  "\n\n[Truncated at 30,000 characters — full filing is longer]"
+                : content
+            return {
+              accessionNumber,
+              primaryDocument,
+              contentLength: content.length,
+              content: truncated,
+            }
+          } catch {
+            return {
+              error: `Could not read filing ${accessionNumber}/${primaryDocument}`,
+            }
           }
         },
       }),
