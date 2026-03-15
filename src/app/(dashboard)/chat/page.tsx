@@ -63,6 +63,15 @@ export default function ChatPage() {
                 >
                   &quot;Analyze NVDA&apos;s recent performance&quot;
                 </button>
+                <button
+                  className="p-3 rounded-lg border border-border hover:bg-accent text-left transition-colors"
+                  onClick={() => {
+                    const fakeEvent = { target: { value: "Deep research on TSLA" } }
+                    handleInputChange(fakeEvent as React.ChangeEvent<HTMLInputElement>)
+                  }}
+                >
+                  &quot;Deep research on TSLA&quot;
+                </button>
               </div>
             </div>
           )}

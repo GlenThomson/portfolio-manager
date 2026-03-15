@@ -375,8 +375,48 @@ export async function POST(req: Request) {
           }
         },
       }),
+      deepResearch: tool({
+        description:
+          "Trigger a comprehensive deep research process for a stock. Returns a research plan that guides multi-step analysis using all available tools. Use this when the user asks to 'research' a stock or wants a full investment thesis.",
+        parameters: z.object({
+          symbol: z
+            .string()
+            .describe("The stock ticker symbol to research (e.g. NVDA, AAPL)"),
+        }),
+        execute: async ({ symbol }) => {
+          const upperSymbol = symbol.toUpperCase()
+          return {
+            type: "research_plan",
+            symbol: upperSymbol,
+            instruction: `Execute a comprehensive research report for ${upperSymbol}. Follow these steps in order, calling each tool:
+
+1. Call getQuote for ${upperSymbol} — get the current price, change, volume
+2. Call analyzeStock for ${upperSymbol} — get fundamentals (P/E, market cap, EPS, revenue growth, dividend yield, beta, 52-week range)
+3. Call searchStocks for "${upperSymbol}" — confirm the full company name and exchange
+
+After gathering all data, synthesize into the structured Research Report format as described in your instructions. Use every piece of data you collected. If any tool call fails, note it in the report and continue with the data you have.`,
+            steps: [
+              {
+                tool: "getQuote",
+                args: { symbol: upperSymbol },
+                purpose: "Current price and market data",
+              },
+              {
+                tool: "analyzeStock",
+                args: { symbol: upperSymbol },
+                purpose: "Fundamental analysis and key metrics",
+              },
+              {
+                tool: "searchStocks",
+                args: { query: upperSymbol },
+                purpose: "Confirm company details and exchange",
+              },
+            ],
+          }
+        },
+      }),
     },
-    maxSteps: 5,
+    maxSteps: 10,
   })
 
   return result.toDataStreamResponse()
