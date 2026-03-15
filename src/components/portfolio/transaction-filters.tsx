@@ -38,7 +38,6 @@ export function TransactionFilters({ portfolioId }: TransactionFiltersProps) {
 
   // Filters
   const [symbolFilter, setSymbolFilter] = useState("")
-  const [searchQuery, setSearchQuery] = useState("")
   const [actionFilter, setActionFilter] = useState<string>("")
   const [dateFrom, setDateFrom] = useState("")
   const [dateTo, setDateTo] = useState("")
@@ -76,14 +75,9 @@ export function TransactionFilters({ portfolioId }: TransactionFiltersProps) {
   const filteredTransactions = useMemo(() => {
     let result = [...transactions]
 
-    // Symbol filter (dropdown)
+    // Symbol filter (supports exact match from dropdown or partial typed match)
     if (symbolFilter) {
-      result = result.filter((t) => t.symbol === symbolFilter)
-    }
-
-    // Search query (partial match)
-    if (searchQuery) {
-      const q = searchQuery.toUpperCase()
+      const q = symbolFilter.toUpperCase()
       result = result.filter((t) => t.symbol.includes(q))
     }
 
@@ -111,17 +105,16 @@ export function TransactionFilters({ portfolioId }: TransactionFiltersProps) {
     })
 
     return result
-  }, [transactions, symbolFilter, searchQuery, actionFilter, dateFrom, dateTo, sortDir])
+  }, [transactions, symbolFilter, actionFilter, dateFrom, dateTo, sortDir])
 
   function clearFilters() {
     setSymbolFilter("")
-    setSearchQuery("")
     setActionFilter("")
     setDateFrom("")
     setDateTo("")
   }
 
-  const hasFilters = symbolFilter || searchQuery || actionFilter || dateFrom || dateTo
+  const hasFilters = symbolFilter || actionFilter || dateFrom || dateTo
 
   if (loading) {
     return (
@@ -145,33 +138,24 @@ export function TransactionFilters({ portfolioId }: TransactionFiltersProps) {
       <CardContent className="space-y-4">
         {/* Filter Controls */}
         <div className="flex flex-wrap gap-3 items-end">
-          {/* Symbol Search */}
+          {/* Symbol Filter */}
           <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">Search Symbol</label>
+            <label className="text-xs text-muted-foreground">Symbol</label>
             <div className="relative">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="All symbols..."
+                value={symbolFilter}
+                onChange={(e) => setSymbolFilter(e.target.value)}
+                list="symbol-options"
                 className="pl-9 w-40 h-9"
               />
+              <datalist id="symbol-options">
+                {uniqueSymbols.map((s) => (
+                  <option key={s} value={s} />
+                ))}
+              </datalist>
             </div>
-          </div>
-
-          {/* Symbol Dropdown */}
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">Symbol</label>
-            <select
-              value={symbolFilter}
-              onChange={(e) => setSymbolFilter(e.target.value)}
-              className="flex h-9 w-32 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            >
-              <option value="">All</option>
-              {uniqueSymbols.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
           </div>
 
           {/* Action Filter */}
