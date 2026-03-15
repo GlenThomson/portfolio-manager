@@ -1,5 +1,5 @@
 import { streamText, tool } from "ai"
-import { createAnthropic } from "@ai-sdk/anthropic"
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
 import { z } from "zod"
 import { eq, and } from "drizzle-orm"
 import { systemPrompt } from "@/lib/ai/system-prompt"
@@ -17,8 +17,12 @@ import YahooFinance from "yahoo-finance2"
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const yahooFinance = new (YahooFinance as any)({ suppressNotices: ["yahooSurvey"] })
 
-const anthropic = createAnthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
+const groq = createOpenAICompatible({
+  name: "groq",
+  baseURL: "https://api.groq.com/openai/v1",
+  headers: {
+    Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+  },
 })
 
 export const maxDuration = 30
@@ -35,7 +39,7 @@ export async function POST(req: Request) {
   }
 
   const result = await streamText({
-    model: anthropic("claude-sonnet-4-20250514"),
+    model: groq.chatModel("llama-3.3-70b-versatile"),
     system: systemPrompt,
     messages,
     tools: {
