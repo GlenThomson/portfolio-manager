@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react"
 import { useParams } from "next/navigation"
 import { StockChart } from "@/components/charts/stock-chart"
 import { FundamentalsGrid } from "@/components/market/fundamentals-grid"
+import { RedditSentiment } from "@/components/market/reddit-sentiment"
 import { StockNews } from "@/components/market/stock-news"
 import { Button } from "@/components/ui/button"
 import { Star, Plus, Loader2 } from "lucide-react"
@@ -321,6 +322,9 @@ export default function StockDetailPage() {
 
       {/* ── Fundamentals Grid ──────────────────────────────── */}
       <FundamentalsGrid symbol={symbol} />
+
+      {/* ── Reddit Sentiment ──────────────────────────────── */}
+      <RedditSentiment symbol={symbol} />
 
       {/* ── News Section ───────────────────────────────────── */}
       <StockNews symbol={symbol} />
