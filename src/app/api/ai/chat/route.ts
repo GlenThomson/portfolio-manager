@@ -3,7 +3,15 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
 import { z } from "zod"
 import { eq, and } from "drizzle-orm"
 import { systemPrompt } from "@/lib/ai/system-prompt"
-import { getQuote, searchSymbols } from "@/lib/market/yahoo"
+import { getQuote, searchSymbols, getChart } from "@/lib/market/yahoo"
+import {
+  computeRSI,
+  computeMACD,
+  computeSMA,
+  computeEMA,
+  computeBollingerBands,
+  computeATR,
+} from "@/lib/market/technicals"
 import { db } from "@/lib/db"
 import {
   portfolios,
@@ -372,6 +380,176 @@ export async function POST(req: Request) {
             return {
               error: `Failed to fetch position detail for ${symbol}: ${String(error)}`,
             }
+          }
+        },
+      }),
+
+      getTechnicals: tool({
+        description:
+          "Get technical analysis indicators for a stock symbol including RSI, MACD, SMA, EMA, Bollinger Bands, ATR, and volume analysis. Use this when users ask about overbought/oversold conditions, trends, momentum, or technical analysis.",
+        parameters: z.object({
+          symbol: z.string().describe("The stock ticker symbol (e.g. AAPL, MSFT)"),
+          interval: z
+            .string()
+            .optional()
+            .describe("Candle interval — default '1d'. Options: '1d', '1wk', '1h', '5m'"),
+        }),
+        execute: async ({ symbol, interval = "1d" }) => {
+          try {
+            const upperSymbol = symbol.toUpperCase()
+
+            // Fetch ~200 candles of OHLCV data
+            const now = new Date()
+            let period1: string
+            if (interval === "1d") {
+              const d = new Date(now)
+              d.setDate(d.getDate() - 300) // ~200 trading days
+              period1 = d.toISOString().split("T")[0]
+            } else if (interval === "1wk") {
+              const d = new Date(now)
+              d.setDate(d.getDate() - 7 * 210)
+              period1 = d.toISOString().split("T")[0]
+            } else if (interval === "1h") {
+              const d = new Date(now)
+              d.setDate(d.getDate() - 30) // ~200 hourly candles
+              period1 = d.toISOString().split("T")[0]
+            } else {
+              // 5m — last 5 days
+              const d = new Date(now)
+              d.setDate(d.getDate() - 5)
+              period1 = d.toISOString().split("T")[0]
+            }
+
+            const candles = await getChart(upperSymbol, period1, interval)
+
+            if (!candles || candles.length < 50) {
+              return { error: `Insufficient data for ${upperSymbol} — only ${candles?.length ?? 0} candles available` }
+            }
+
+            const closes = candles.map((c: { close: number }) => c.close)
+            const highs = candles.map((c: { high: number }) => c.high)
+            const lows = candles.map((c: { low: number }) => c.low)
+            const volumes = candles.map((c: { volume: number }) => c.volume)
+            const lastIdx = closes.length - 1
+            const lastPrice = closes[lastIdx]
+            const lastVolume = volumes[lastIdx]
+
+            // Compute indicators
+            const rsiValues = computeRSI(closes, 14)
+            const rsiValue = rsiValues[lastIdx]
+            const rsiInterpretation =
+              rsiValue >= 70 ? "overbought" : rsiValue <= 30 ? "oversold" : "neutral"
+
+            const macdResult = computeMACD(closes)
+            const macdValue = macdResult.macd[lastIdx]
+            const macdSignal = macdResult.signal[lastIdx]
+            const macdHistogram = macdResult.histogram[lastIdx]
+            const macdInterpretation =
+              isNaN(macdHistogram) ? "neutral" :
+              macdHistogram > 0 ? "bullish" : macdHistogram < 0 ? "bearish" : "neutral"
+
+            const sma20 = computeSMA(closes, 20)
+            const sma50 = computeSMA(closes, 50)
+            const sma200 = computeSMA(closes, 200)
+
+            const ema12 = computeEMA(closes, 12)
+            const ema26 = computeEMA(closes, 26)
+
+            const bb = computeBollingerBands(closes, 20, 2)
+            const bbUpper = bb.upper[lastIdx]
+            const bbMiddle = bb.middle[lastIdx]
+            const bbLower = bb.lower[lastIdx]
+            const percentB =
+              bbUpper !== bbLower && !isNaN(bbUpper) && !isNaN(bbLower)
+                ? (lastPrice - bbLower) / (bbUpper - bbLower)
+                : NaN
+            const bbInterpretation = isNaN(percentB)
+              ? "neutral"
+              : percentB > 1
+                ? "overbought — price above upper band"
+                : percentB < 0
+                  ? "oversold — price below lower band"
+                  : percentB > 0.8
+                    ? "approaching overbought"
+                    : percentB < 0.2
+                      ? "approaching oversold"
+                      : "neutral — within bands"
+
+            const atrValues = computeATR(highs, lows, closes, 14)
+            const atrValue = atrValues[lastIdx]
+            const atrPercent = !isNaN(atrValue) ? (atrValue / lastPrice) * 100 : NaN
+
+            // Volume analysis: compare current volume to 20-day average
+            const recentVolumes = volumes.slice(Math.max(0, lastIdx - 19), lastIdx + 1)
+            const avgVolume20 =
+              recentVolumes.length > 0
+                ? recentVolumes.reduce((a: number, b: number) => a + b, 0) / recentVolumes.length
+                : 0
+            const volumeRatio = avgVolume20 > 0 ? lastVolume / avgVolume20 : 0
+            const volumeInterpretation =
+              volumeRatio > 1.5
+                ? "significantly above average"
+                : volumeRatio > 1.1
+                  ? "above average"
+                  : volumeRatio < 0.5
+                    ? "significantly below average"
+                    : volumeRatio < 0.9
+                      ? "below average"
+                      : "near average"
+
+            const sma200Value = sma200[lastIdx]
+
+            const round = (v: number, decimals = 2) =>
+              isNaN(v) ? null : Math.round(v * 10 ** decimals) / 10 ** decimals
+
+            return {
+              symbol: upperSymbol,
+              interval,
+              lastPrice: round(lastPrice),
+              lastVolume,
+              candleCount: candles.length,
+              rsi: {
+                value: round(rsiValue),
+                interpretation: rsiInterpretation,
+              },
+              macd: {
+                macd: round(macdValue, 4),
+                signal: round(macdSignal, 4),
+                histogram: round(macdHistogram, 4),
+                interpretation: macdInterpretation,
+              },
+              sma: {
+                sma20: round(sma20[lastIdx]),
+                sma50: round(sma50[lastIdx]),
+                sma200: round(sma200Value),
+                priceVs200SMA:
+                  isNaN(sma200Value) ? "insufficient data" :
+                  lastPrice > sma200Value ? "above" : "below",
+              },
+              ema: {
+                ema12: round(ema12[lastIdx]),
+                ema26: round(ema26[lastIdx]),
+              },
+              bollingerBands: {
+                upper: round(bbUpper),
+                middle: round(bbMiddle),
+                lower: round(bbLower),
+                percentB: round(percentB),
+                interpretation: bbInterpretation,
+              },
+              atr: {
+                value: round(atrValue),
+                percentOfPrice: round(atrPercent),
+              },
+              volumeAnalysis: {
+                current: lastVolume,
+                avg20: round(avgVolume20, 0),
+                ratio: round(volumeRatio),
+                interpretation: volumeInterpretation,
+              },
+            }
+          } catch (error) {
+            return { error: `Failed to compute technicals for ${symbol}: ${String(error)}` }
           }
         },
       }),
