@@ -37,7 +37,7 @@ const groq = createOpenAICompatible({
   },
 })
 
-export const maxDuration = 30
+export const maxDuration = 60
 
 export async function POST(req: Request) {
   const { messages } = await req.json()
@@ -578,11 +578,10 @@ export async function POST(req: Request) {
                   return {
                     symbol: upperSymbol,
                     source: "finnhub",
-                    articles: articles.slice(0, 10).map((a) => ({
+                    articles: articles.slice(0, 8).map((a) => ({
                       headline: a.headline,
-                      summary: a.summary,
+                      summary: a.summary?.slice(0, 200) || "",
                       source: a.source,
-                      url: a.url,
                       datetime: new Date(a.datetime * 1000).toISOString(),
                     })),
                   }
@@ -597,11 +596,9 @@ export async function POST(req: Request) {
             return {
               symbol: upperSymbol,
               source: "yahoo",
-              articles: yahooNews.slice(0, 10).map((a: { title: string; publisher: string; link: string; publishedAt: string }) => ({
+              articles: yahooNews.slice(0, 8).map((a: { title: string; publisher: string; link: string; publishedAt: string }) => ({
                 headline: a.title,
-                summary: "",
                 source: a.publisher,
-                url: a.link,
                 datetime: a.publishedAt,
               })),
             }
