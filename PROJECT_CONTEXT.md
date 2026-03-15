@@ -2,7 +2,9 @@
 
 ## Vision
 
-An AI-powered portfolio manager and investment assistant that combines real-time market data, technical analysis, earnings/SEC filing intelligence, social sentiment, and an AI chat interface into a single platform. Designed to grow from a personal tool into a multi-user SaaS.
+An **AI-first** investment intelligence platform. The core value proposition is an AI that can ingest vast amounts of data — news, SEC filings, technical indicators, social sentiment, market anomalies — and reason about it to help find and make investment decisions. The portfolio tracker is the foundation; the AI analyst is the product.
+
+**Core principle**: The AI should be able to autonomously research opportunities, monitor the market, and surface actionable insights — not just answer questions about positions the user already holds.
 
 ---
 
@@ -36,22 +38,25 @@ An AI-powered portfolio manager and investment assistant that combines real-time
 - Market status indicator (open/closed/pre-market/after-hours with countdown)
 - Stock detail page: chart + fundamentals + news + sentiment in one view
 
-### AI Intelligence
+### AI Intelligence (Core Product)
 - Chat interface: natural language → actions ("Research Moderna and report back")
-- **Primary AI: Anthropic Claude** (via Vercel AI SDK with @ai-sdk/anthropic)
-- Autonomous research agent: fetches fundamentals + 10-K + sentiment + chart → produces structured investment thesis
+- **Primary AI: Groq (Llama 3.3 70B)** for dev, **Anthropic Claude** for production
+- **AI Tools**: getQuote, getPortfolio, getWatchlist, analyzeStock, searchStocks, getPositionDetail, getTechnicals, getNews, analyzeSentiment, getFilings, readFiling, scanMarket, deepResearch
+- **Autonomous research agent**: user says "Research NVDA" → AI chains tools (quote → fundamentals → technicals → news → filings → sentiment) → produces structured investment thesis with bull/bear case
+- **Market scanner**: AI scans for unusual volume/price moves, screens by criteria, finds opportunities
+- **Technical analysis reasoning**: AI reads RSI, MACD, SMA/EMA, Bollinger Bands and explains what they mean for a stock
 - Portfolio analysis and rebalancing recommendations
-- Explainable outputs: every recommendation cites specific data sources
+- Explainable outputs: every recommendation cites specific data sources (RSI value, 10-Q excerpt, sentiment score)
 - AI re-evaluates position theses when new data arrives
 
 ### Market Intelligence
-- Earnings report reading and AI summarisation
-- SEC EDGAR 10-K/10-Q/8-K filing analysis (Claude handles long context — 200k tokens)
-- Earnings calendar with beat/miss history (earnings whisper tracking)
+- **Finnhub integration**: Real-time news, sentiment scores, earnings calendar (free, 60 req/min)
+- **SEC EDGAR**: 10-K/10-Q/8-K filing reader with AI summaries (free, no key)
+- **Reddit sentiment**: r/wallstreetbets and r/stocks mention tracking via Tradestie/ApeWisdom (free)
 - Market anomaly detection: price/volume Z-score outliers (e.g. oil up 100% in a week)
-- Social sentiment: StockTwits → Twitter/X API
-- Options flow surface (Unusual Whales — Phase 3+)
-- Financial news aggregation for watchlist stocks
+- Earnings calendar with beat/miss history
+- News aggregation for watchlist stocks
+- Twitter/X monitoring (future — requires $200/mo API)
 
 ### Alerts & Notifications
 - Price target alerts (above/below)
@@ -87,7 +92,9 @@ An AI-powered portfolio manager and investment assistant that combines real-time
 | State | TanStack Query + Zustand | Server state + UI state |
 | Market data (Phase 1) | yahoo-finance2 | Free, good enough for dev |
 | Market data (Phase 2+) | Alpha Vantage / Polygon.io | Reliable, higher rate limits |
-| Sentiment | StockTwits API (free) → Twitter/X Basic | Free start |
+| Finnhub | News, sentiment, earnings | 60 req/min free | Phase 2 |
+| Reddit (Tradestie) | r/WSB top 50 sentiment | 20 req/min free | Phase 2 |
+| Reddit (ApeWisdom) | Mention tracking | Free | Phase 2 |
 | SEC filings | SEC EDGAR API | Free, no key required |
 | Email | Resend (Phase 2+) | 3k/mo free tier |
 | Hosting | Vercel | Native Next.js, edge functions |
@@ -122,23 +129,28 @@ An AI-powered portfolio manager and investment assistant that combines real-time
 - ✅ Real-time chart polling for intraday timeframes
 - ✅ Intraday candle data filtering (zero-volume, date range clamping)
 
-### Phase 2 — Market Intelligence: "Know the Market"
-- SEC EDGAR filing reader with AI summaries
-- Earnings calendar + beat/miss history
-- StockTwits + Reddit sentiment
-- Market anomaly detection (Z-score outliers)
-- Upstash Redis for caching + QStash for background jobs
-- Background alert checking (currently manual/poll-based)
-- News aggregation for watchlist stocks
+### Phase 2 — AI Intelligence: "Your AI Analyst" ⬅️ IN PROGRESS
+**Goal**: AI can autonomously research stocks, read filings, analyze sentiment, scan for opportunities, and produce structured investment theses.
 
-### Phase 3 — AI Analyst: "Your Research Analyst"
-- Autonomous research agent (queued background jobs)
-- Twitter/X account monitoring
-- Portfolio position scoring (nightly)
-- Structured research report UI
-- Options flow (Unusual Whales)
+- AI technical analysis tool (RSI, MACD, SMA/EMA, Bollinger values as data for AI reasoning)
+- Finnhub news integration + AI sentiment scoring
+- SEC EDGAR filing reader with AI summaries
+- Market scanner (unusual volume/price moves, sector screening)
+- Deep research agent (chains all tools → structured thesis)
+- Reddit sentiment (r/wallstreetbets, r/stocks mention tracking)
+- Earnings calendar + beat/miss history
+- Improved AI chat UI (tool result cards, research report formatting, suggested prompts)
+- Currency conversion across all pages
+- Sharesies CSV auto-detection (fix $0 average costs)
+
+### Phase 3 — Advanced Intelligence: "Market Edge"
+- Twitter/X account monitoring (when API budget allows)
+- Portfolio position scoring (scheduled)
 - Investment thesis journaling + AI re-evaluation
 - Stock screener (filter by technical/fundamental criteria)
+- Options flow (Unusual Whales)
+- Upstash Redis for caching + QStash for background jobs
+- Background alert checking (currently manual/poll-based)
 
 ### Phase 4 — Brokerage Integration: "Take Action"
 - Alpaca Markets API (paper + live trading)
@@ -279,6 +291,8 @@ ANTHROPIC_API_KEY=
 OPENAI_API_KEY=           # optional fallback
 
 # Market Data
+GROQ_API_KEY=             # Free — Llama 3.3 70B for dev
+FINNHUB_API_KEY=          # Free — news, sentiment, earnings
 ALPHA_VANTAGE_API_KEY=    # Phase 2+
 
 # Database (Supabase connection pooler)
