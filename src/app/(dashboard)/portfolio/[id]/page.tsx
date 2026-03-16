@@ -25,6 +25,7 @@ import { PositionDetailRow } from "@/components/portfolio/position-detail-row"
 import { CsvExport } from "@/components/portfolio/csv-export"
 import { TransactionFilters } from "@/components/portfolio/transaction-filters"
 import { useCurrency } from "@/hooks/useCurrency"
+import { PortfolioHealth } from "@/components/portfolio/portfolio-health"
 
 interface Position {
   id: string
@@ -555,6 +556,11 @@ export default function PortfolioDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Portfolio Health */}
+      {stockPositions.length > 0 && (
+        <PortfolioHealth portfolioId={portfolioId} />
+      )}
 
       {/* Stock Positions table */}
       {stockPositions.length === 0 && cashPositions.length === 0 ? (

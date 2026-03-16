@@ -39,6 +39,8 @@ import {
   transactions,
 } from "@/lib/db/schema"
 import { getServerUserId } from "@/lib/supabase/server"
+import { analyzePortfolioHealth } from "@/lib/scoring/portfolio-health"
+import { isNull } from "drizzle-orm"
 import YahooFinance from "yahoo-finance2"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -971,6 +973,64 @@ After gathering all data, synthesize into the structured Research Report format 
             return score
           } catch {
             return { error: `Could not compute score for ${symbol}` }
+          }
+        },
+      }),
+
+      getPortfolioHealth: tool({
+        description:
+          "Analyze the health and diversification of a user's portfolio. Returns an overall score, grade, sector allocation, concentration warnings, risk metrics (beta), and actionable suggestions. Use this when users ask about portfolio health, diversification, risk, or how balanced their portfolio is.",
+        parameters: z.object({
+          portfolioId: z
+            .string()
+            .optional()
+            .describe("Optional portfolio ID. If not provided, uses the first portfolio."),
+        }),
+        execute: async ({ portfolioId }) => {
+          try {
+            // Find the portfolio
+            const portfolioFilter = portfolioId
+              ? and(eq(portfolios.userId, userId), eq(portfolios.id, portfolioId))
+              : eq(portfolios.userId, userId)
+
+            const userPortfolios = await db
+              .select()
+              .from(portfolios)
+              .where(portfolioFilter)
+
+            if (userPortfolios.length === 0) {
+              return { error: "No portfolios found" }
+            }
+
+            const targetPortfolio = userPortfolios[0]
+
+            // Fetch open positions (exclude cash)
+            const positions = await db
+              .select()
+              .from(portfolioPositions)
+              .where(
+                and(
+                  eq(portfolioPositions.portfolioId, targetPortfolio.id),
+                  eq(portfolioPositions.userId, userId),
+                  isNull(portfolioPositions.closedAt)
+                )
+              )
+
+            const stockPositions = positions
+              .filter((p) => p.assetType !== "cash")
+              .map((p) => ({
+                symbol: p.symbol,
+                quantity: Number(p.quantity),
+                averageCost: Number(p.averageCost),
+              }))
+
+            const report = await analyzePortfolioHealth(stockPositions)
+            return {
+              portfolioName: targetPortfolio.name,
+              ...report,
+            }
+          } catch (error) {
+            return { error: `Failed to analyze portfolio health: ${String(error)}` }
           }
         },
       }),
