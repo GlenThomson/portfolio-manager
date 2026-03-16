@@ -25,6 +25,7 @@ import {
   scan52WeekHighLow,
 } from "@/lib/market/scanner"
 import { getWSBTrending, getStockMentions, getStockSentiment } from "@/lib/market/reddit"
+import { getStockScore } from "@/lib/scoring"
 import { db } from "@/lib/db"
 import {
   portfolios,
@@ -877,6 +878,24 @@ After gathering all data, synthesize into the structured Research Report format 
                 purpose: "Confirm company details and exchange",
               },
             ],
+          }
+        },
+      }),
+
+      getStockScore: tool({
+        description:
+          "Get a comprehensive multi-factor stock score (0-100) with letter grade. Combines technical indicators (RSI, MACD, SMA, Bollinger), fundamentals (P/E, margins, growth, ROE), sentiment (news, Reddit, Fear & Greed), and momentum (3m/6m returns). Returns an overall score, letter grade (A+ to F), sub-scores for each factor, and detailed explanations.",
+        parameters: z.object({
+          symbol: z
+            .string()
+            .describe("The stock ticker symbol to score (e.g. AAPL, MSFT)"),
+        }),
+        execute: async ({ symbol }) => {
+          try {
+            const score = await getStockScore(symbol.toUpperCase())
+            return score
+          } catch {
+            return { error: `Could not compute score for ${symbol}` }
           }
         },
       }),

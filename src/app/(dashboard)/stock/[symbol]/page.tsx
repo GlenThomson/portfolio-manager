@@ -6,6 +6,7 @@ import { StockChart } from "@/components/charts/stock-chart"
 import { FundamentalsGrid } from "@/components/market/fundamentals-grid"
 import { SecFilings } from "@/components/market/sec-filings"
 import { RedditSentiment } from "@/components/market/reddit-sentiment"
+import { StockScore } from "@/components/market/stock-score"
 import { StockNews } from "@/components/market/stock-news"
 import { Button } from "@/components/ui/button"
 import { Star, Plus, Loader2 } from "lucide-react"
@@ -322,6 +323,9 @@ export default function StockDetailPage() {
           ))}
         </div>
       )}
+
+      {/* ── AI Score ──────────────────────────────────────── */}
+      <StockScore symbol={symbol} />
 
       {/* ── Fundamentals Grid ──────────────────────────────── */}
       <FundamentalsGrid symbol={symbol} />
