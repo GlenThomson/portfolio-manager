@@ -24,6 +24,284 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
+// --- Fear & Greed ---
+interface FearGreedHistoryPoint {
+  date: number
+  score: number
+  rating: string
+}
+
+interface FearGreedData {
+  score: number
+  rating: string
+  previousClose: number
+  previous1Week: number
+  previous1Month: number
+  previous1Year: number
+  history: FearGreedHistoryPoint[]
+}
+
+const FG_RANGES = ["1m", "3m", "6m", "1y", "2y", "5y"] as const
+
+function scoreColor(score: number): string {
+  if (score <= 25) return "#ea3943"
+  if (score <= 45) return "#ea8c00"
+  if (score <= 55) return "#9ca3af"
+  if (score <= 75) return "#30d5c8"
+  return "#16c784"
+}
+
+function ratingColor(rating: string): string {
+  if (rating.includes("extreme fear")) return "#ea3943"
+  if (rating.includes("fear")) return "#ea8c00"
+  if (rating.includes("neutral")) return "#9ca3af"
+  if (rating.includes("extreme greed")) return "#16c784"
+  if (rating.includes("greed")) return "#30d5c8"
+  return "#9ca3af"
+}
+
+function FearGreedSection({
+  data,
+  range,
+  onRangeChange,
+}: {
+  data: FearGreedData | null
+  range: string
+  onRangeChange: (r: string) => void
+}) {
+  if (!data) {
+    return (
+      <Card>
+        <CardContent className="pt-6">
+          <div className="h-48 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-full border-2 border-muted-foreground/30 border-t-primary animate-spin" />
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const color = ratingColor(data.rating)
+
+  // Gauge: semicircle, center bottom, arcs curving upward
+  const R = 80
+  const CX = 100
+  const CY = 92
+  // Point on the semicircle: pct 0=left, 1=right
+  const arcPoint = (pct: number) => {
+    const angle = Math.PI * (1 - pct)
+    return {
+      x: CX + R * Math.cos(angle),
+      y: CY - R * Math.sin(angle),
+    }
+  }
+
+  const needlePct = data.score / 100
+  const needleEnd = arcPoint(needlePct)
+
+  const zones = [
+    { from: 0, to: 0.25, color: "#ea3943" },
+    { from: 0.25, to: 0.45, color: "#ea8c00" },
+    { from: 0.45, to: 0.55, color: "#9ca3af" },
+    { from: 0.55, to: 0.75, color: "#30d5c8" },
+    { from: 0.75, to: 1, color: "#16c784" },
+  ]
+
+  // Build arc path between two percentages (sweep upward)
+  const makeArc = (fromPct: number, toPct: number) => {
+    const start = arcPoint(fromPct)
+    const end = arcPoint(toPct)
+    const largeArc = toPct - fromPct > 0.5 ? 1 : 0
+    // sweep=1 for clockwise in SVG (visually curving upward)
+    return `M ${start.x} ${start.y} A ${R} ${R} 0 ${largeArc} 1 ${end.x} ${end.y}`
+  }
+
+  // History chart
+  const history = data.history ?? []
+  const chartW = 400
+  const chartH = 100
+  const chartPad = 4
+  const innerH = chartH - chartPad * 2
+
+  let historyPath = ""
+  let historyAreaPath = ""
+  if (history.length > 1) {
+    const minDate = history[0].date
+    const maxDate = history[history.length - 1].date
+    const dateRange = maxDate - minDate || 1
+
+    const points = history.map((p) => ({
+      x: chartPad + ((p.date - minDate) / dateRange) * (chartW - chartPad * 2),
+      y: chartPad + (1 - p.score / 100) * innerH,
+    }))
+
+    historyPath = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ")
+    historyAreaPath = historyPath + ` L ${points[points.length - 1].x} ${chartH} L ${points[0].x} ${chartH} Z`
+  }
+
+  const formatDate = (ts: number) =>
+    new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric", year: range !== "1m" && range !== "3m" ? "2-digit" : undefined })
+
+  return (
+    <Card>
+      <CardContent className="pt-6">
+        <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] gap-6 items-start">
+          {/* Left: Gauge */}
+          <div className="flex flex-col items-center">
+            <div className="w-56 h-32">
+              <svg viewBox="0 0 200 105" className="w-full h-full">
+                {/* Zone arcs (dimmed) */}
+                {zones.map((zone) => (
+                  <path
+                    key={zone.from}
+                    d={makeArc(zone.from, zone.to)}
+                    fill="none"
+                    stroke={zone.color}
+                    strokeWidth="12"
+                    strokeLinecap="butt"
+                    opacity="0.25"
+                  />
+                ))}
+                {/* Active zone (bright) */}
+                {zones.map((zone) => {
+                  if (needlePct < zone.from || needlePct > zone.to) return null
+                  return (
+                    <path
+                      key={`a-${zone.from}`}
+                      d={makeArc(zone.from, zone.to)}
+                      fill="none"
+                      stroke={zone.color}
+                      strokeWidth="12"
+                      strokeLinecap="butt"
+                    />
+                  )
+                })}
+                {/* Needle */}
+                <line
+                  x1={CX} y1={CY}
+                  x2={needleEnd.x} y2={needleEnd.y}
+                  stroke={color} strokeWidth="2.5" strokeLinecap="round"
+                />
+                <circle cx={CX} cy={CY} r="4" fill={color} />
+                {/* Labels */}
+                <text x="14" y="102" fontSize="9" fill="#787b86" textAnchor="start">0</text>
+                <text x="100" y="8" fontSize="9" fill="#787b86" textAnchor="middle">50</text>
+                <text x="186" y="102" fontSize="9" fill="#787b86" textAnchor="end">100</text>
+              </svg>
+            </div>
+            {/* Score text */}
+            <div className="text-center -mt-2">
+              <span className="text-4xl font-bold" style={{ color }}>{Math.round(data.score)}</span>
+              <p className="text-base font-semibold capitalize mt-0.5" style={{ color }}>{data.rating}</p>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">CNN Fear & Greed Index</p>
+            {/* Previous values */}
+            <div className="flex gap-5 mt-3">
+              {[
+                { label: "1W ago", val: data.previous1Week },
+                { label: "1M ago", val: data.previous1Month },
+                { label: "1Y ago", val: data.previous1Year },
+              ].map((p) => (
+                <div key={p.label} className="text-center">
+                  <p className="text-[11px] text-muted-foreground">{p.label}</p>
+                  <p className="text-sm font-bold" style={{ color: scoreColor(p.val) }}>
+                    {Math.round(p.val)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Right: History chart */}
+          {history.length > 1 && (
+            <div className="flex flex-col gap-2 min-w-0">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground font-medium">Historical</p>
+                <div className="flex gap-1">
+                  {FG_RANGES.map((r) => (
+                    <button
+                      key={r}
+                      onClick={() => onRangeChange(r)}
+                      className={cn(
+                        "px-2 py-0.5 text-xs rounded font-medium transition-colors",
+                        range === r
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground hover:bg-accent"
+                      )}
+                    >
+                      {r.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="w-full">
+                <svg viewBox={`0 0 ${chartW} ${chartH}`} className="w-full" preserveAspectRatio="none" style={{ height: "140px" }}>
+                  {/* Zone bands */}
+                  {[
+                    { from: 75, to: 100, color: "#16c784" },
+                    { from: 55, to: 75, color: "#30d5c8" },
+                    { from: 45, to: 55, color: "#9ca3af" },
+                    { from: 25, to: 45, color: "#ea8c00" },
+                    { from: 0, to: 25, color: "#ea3943" },
+                  ].map((band) => (
+                    <rect
+                      key={band.from}
+                      x="0"
+                      y={chartPad + (1 - band.to / 100) * innerH}
+                      width={chartW}
+                      height={((band.to - band.from) / 100) * innerH}
+                      fill={band.color}
+                      opacity="0.06"
+                    />
+                  ))}
+                  {/* Threshold lines */}
+                  {[25, 50, 75].map((v) => (
+                    <line
+                      key={v}
+                      x1="0" x2={chartW}
+                      y1={chartPad + (1 - v / 100) * innerH}
+                      y2={chartPad + (1 - v / 100) * innerH}
+                      stroke="#787b86" strokeWidth="0.5" strokeDasharray="4 3" opacity="0.3"
+                    />
+                  ))}
+                  {/* Y-axis labels */}
+                  {[0, 25, 50, 75, 100].map((v) => (
+                    <text
+                      key={v}
+                      x={chartW - 2}
+                      y={chartPad + (1 - v / 100) * innerH + 3}
+                      fontSize="7"
+                      fill="#787b86"
+                      textAnchor="end"
+                      opacity="0.6"
+                    >
+                      {v}
+                    </text>
+                  ))}
+                  {/* Area fill */}
+                  <path d={historyAreaPath} fill="url(#fgGrad)" opacity="0.25" />
+                  {/* Line */}
+                  <path d={historyPath} fill="none" stroke={color} strokeWidth="1.5" />
+                  <defs>
+                    <linearGradient id="fgGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={color} stopOpacity="0.5" />
+                      <stop offset="100%" stopColor={color} stopOpacity="0" />
+                    </linearGradient>
+                  </defs>
+                </svg>
+                <div className="flex justify-between text-[10px] text-muted-foreground mt-1 px-1">
+                  <span>{formatDate(history[0].date)}</span>
+                  <span>{formatDate(history[history.length - 1].date)}</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 // --- Types ---
 interface ScanResult {
   symbol: string
@@ -375,6 +653,8 @@ function EmptyState({ message }: { message: string }) {
 // --- Main page ---
 export default function MarketsPage() {
   const [activeTab, setActiveTab] = useState("gainers")
+  const [fearGreed, setFearGreed] = useState<FearGreedData | null>(null)
+  const [fgRange, setFgRange] = useState("1y")
   const [gainers, setGainers] = useState<ScanResult[]>([])
   const [losers, setLosers] = useState<ScanResult[]>([])
   const [volume, setVolume] = useState<ScanResult[]>([])
@@ -427,6 +707,15 @@ export default function MarketsPage() {
     fetchData("sectors")
   }, [fetchData])
 
+  // Fetch Fear & Greed
+  useEffect(() => {
+    setFearGreed(null)
+    fetch(`/api/market/fear-greed?range=${fgRange}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d && !d.error) setFearGreed(d) })
+      .catch(() => {})
+  }, [fgRange])
+
   const handleRefresh = () => {
     fetchData(activeTab)
   }
@@ -445,6 +734,8 @@ export default function MarketsPage() {
           Refresh
         </Button>
       </div>
+
+      <FearGreedSection data={fearGreed} range={fgRange} onRangeChange={setFgRange} />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="grid w-full grid-cols-5">
