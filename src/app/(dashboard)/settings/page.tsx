@@ -13,15 +13,22 @@ export default async function SettingsPage() {
     redirect("/login")
   }
 
-  const [profile] = await db
-    .select()
-    .from(userProfiles)
-    .where(eq(userProfiles.userId, user.id))
-    .limit(1)
-
-  const displayName = profile?.displayName ?? ""
+  let displayName = ""
   const email = user.email ?? ""
-  const settings = (profile?.settings as Record<string, unknown>) ?? {}
+  let settings: Record<string, unknown> = {}
+
+  try {
+    const [profile] = await db
+      .select()
+      .from(userProfiles)
+      .where(eq(userProfiles.userId, user.id))
+      .limit(1)
+
+    displayName = profile?.displayName ?? ""
+    settings = (profile?.settings as Record<string, unknown>) ?? {}
+  } catch (error) {
+    console.error("Failed to load user profile:", error)
+  }
 
   return (
     <div className="space-y-6">
