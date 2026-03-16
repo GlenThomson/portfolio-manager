@@ -24,6 +24,7 @@ import {
   scanSectorPerformance,
   scan52WeekHighLow,
 } from "@/lib/market/scanner"
+import { getWSBTrending, getStockMentions, getStockSentiment } from "@/lib/market/reddit"
 import { db } from "@/lib/db"
 import {
   portfolios,
@@ -802,6 +803,40 @@ export async function POST(req: Request) {
             }
           } catch {
             return { error: `Market scan failed for ${scanType}` }
+          }
+        },
+      }),
+
+      getRedditSentiment: tool({
+        description:
+          "Get Reddit sentiment data for a stock or see what's trending on r/wallstreetbets. Without a symbol, returns trending WSB stocks. With a symbol, returns sentiment scores and mention counts.",
+        parameters: z.object({
+          symbol: z
+            .string()
+            .optional()
+            .describe("Optional stock ticker — omit to get WSB trending list"),
+          type: z
+            .enum(["trending", "mentions"])
+            .optional()
+            .describe(
+              "Type of data: 'trending' for WSB trending stocks, 'mentions' for top mentioned stocks across all reddit. Defaults to 'trending'."
+            ),
+        }),
+        execute: async ({ symbol, type }) => {
+          try {
+            if (symbol) {
+              const sentiment = await getStockSentiment(symbol.toUpperCase())
+              return sentiment
+            }
+            if (type === "mentions") {
+              const mentions = await getStockMentions()
+              return { topMentions: mentions.slice(0, 20) }
+            }
+            // Default: WSB trending
+            const trending = await getWSBTrending(20)
+            return { trending }
+          } catch {
+            return { error: "Could not fetch Reddit sentiment data" }
           }
         },
       }),
