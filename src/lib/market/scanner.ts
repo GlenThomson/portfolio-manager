@@ -3,6 +3,7 @@ import YahooFinance from "yahoo-finance2"
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const yahooFinance = new (YahooFinance as any)({
   suppressNotices: ["yahooSurvey"],
+  validation: { logErrors: false },
 })
 
 // --- Cache layer ---
@@ -56,6 +57,16 @@ export interface FiftyTwoWeekResult {
   distanceFromLow: number // percentage above 52w low
   nearHigh: boolean // within 5% of 52w high
   nearLow: boolean // within 5% of 52w low
+}
+
+// --- Helper: screener with validation disabled ---
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function runScreener(scrIds: string, count: number): Promise<any> {
+  return yahooFinance.screener(
+    { scrIds, count },
+    undefined,
+    { validateResult: false }
+  )
 }
 
 // --- Helper: batch quote fetch ---
@@ -113,10 +124,7 @@ export async function scanUnusualVolume(
   try {
     // Try screener first
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result: any = await yahooFinance.screener({
-      scrIds: "most_actives",
-      count: Math.max(count, 20),
-    })
+    const result: any = await runScreener("most_actives", Math.max(count, 20))
     const quotes = result?.quotes ?? []
     if (quotes.length > 0) {
       const items: ScanResult[] = quotes
@@ -170,10 +178,7 @@ export async function scanTopGainers(
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result: any = await yahooFinance.screener({
-      scrIds: "day_gainers",
-      count,
-    })
+    const result: any = await runScreener("day_gainers", count)
     const quotes = result?.quotes ?? []
     if (quotes.length > 0) {
       const items = quotes.map(toScanResult).slice(0, count)
@@ -208,10 +213,7 @@ export async function scanTopLosers(
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result: any = await yahooFinance.screener({
-      scrIds: "day_losers",
-      count,
-    })
+    const result: any = await runScreener("day_losers", count)
     const quotes = result?.quotes ?? []
     if (quotes.length > 0) {
       const items = quotes.map(toScanResult).slice(0, count)
