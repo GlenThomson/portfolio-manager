@@ -21,7 +21,9 @@ import {
   BarChart3,
   ArrowUpDown,
   RefreshCw,
+  CalendarDays,
 } from "lucide-react"
+import { EarningsCalendar } from "@/components/market/earnings-calendar"
 import { Button } from "@/components/ui/button"
 
 // --- Fear & Greed ---
@@ -738,7 +740,7 @@ export default function MarketsPage() {
       <FearGreedSection data={fearGreed} range={fgRange} onRangeChange={setFgRange} />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="gainers" className="gap-1">
             <TrendingUp className="h-3 w-3 hidden sm:inline" />
             Gainers
@@ -758,6 +760,10 @@ export default function MarketsPage() {
           <TabsTrigger value="52week" className="gap-1">
             <ArrowUpDown className="h-3 w-3 hidden sm:inline" />
             52W H/L
+          </TabsTrigger>
+          <TabsTrigger value="earnings" className="gap-1">
+            <CalendarDays className="h-3 w-3 hidden sm:inline" />
+            Earnings
           </TabsTrigger>
         </TabsList>
 
@@ -784,6 +790,10 @@ export default function MarketsPage() {
                 data={fiftyTwoWeek}
                 loading={loading["52week"]}
               />
+            </TabsContent>
+
+            <TabsContent value="earnings">
+              <EarningsCalendar />
             </TabsContent>
           </CardContent>
         </Card>

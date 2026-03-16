@@ -14,6 +14,11 @@ import {
 } from "@/lib/market/technicals"
 import {
   getCompanyNews,
+  getEarnings,
+  getEarningsCalendar,
+  getRecommendationTrends,
+  getPriceTarget,
+  getInsiderTransactions,
   isFinnhubConfigured,
 } from "@/lib/market/finnhub"
 import { getFilings, getFilingDocument } from "@/lib/market/edgar"
@@ -803,6 +808,76 @@ export async function POST(req: Request) {
             }
           } catch {
             return { error: `Market scan failed for ${scanType}` }
+          }
+        },
+      }),
+
+      getEarnings: tool({
+        description:
+          "Get earnings history and upcoming earnings for a stock. Returns past EPS actuals vs estimates with surprise data. Without a symbol, returns upcoming earnings calendar for the next 2 weeks.",
+        parameters: z.object({
+          symbol: z
+            .string()
+            .optional()
+            .describe("Stock ticker symbol (e.g. AAPL). Omit for upcoming earnings calendar."),
+        }),
+        execute: async ({ symbol }) => {
+          try {
+            if (symbol) {
+              const upperSymbol = symbol.toUpperCase()
+              const earnings = await getEarnings(upperSymbol)
+              return { symbol: upperSymbol, earnings }
+            }
+            // Default: next 2 weeks calendar
+            const now = new Date()
+            const twoWeeks = new Date(now)
+            twoWeeks.setDate(twoWeeks.getDate() + 14)
+            const from = now.toISOString().split("T")[0]
+            const to = twoWeeks.toISOString().split("T")[0]
+            const events = await getEarningsCalendar(from, to)
+            return { from, to, events }
+          } catch {
+            return { error: `Could not fetch earnings data${symbol ? ` for ${symbol}` : ""}` }
+          }
+        },
+      }),
+
+      getAnalystRatings: tool({
+        description:
+          "Get analyst buy/hold/sell recommendations and price targets for a stock. Returns recommendation trend history and consensus price target (high, low, mean, median).",
+        parameters: z.object({
+          symbol: z.string().describe("The stock ticker symbol (e.g. AAPL, MSFT)"),
+        }),
+        execute: async ({ symbol }) => {
+          try {
+            const upperSymbol = symbol.toUpperCase()
+            const [recommendations, priceTarget] = await Promise.all([
+              getRecommendationTrends(upperSymbol),
+              getPriceTarget(upperSymbol),
+            ])
+            return { symbol: upperSymbol, recommendations, priceTarget }
+          } catch {
+            return { error: `Could not fetch analyst ratings for ${symbol}` }
+          }
+        },
+      }),
+
+      getInsiderTrading: tool({
+        description:
+          "Get recent insider buy/sell transactions for a stock. Shows who bought or sold, how many shares, at what price, and when. Transaction codes: P = Purchase, S = Sale, M = Option Exercise.",
+        parameters: z.object({
+          symbol: z.string().describe("The stock ticker symbol (e.g. AAPL, MSFT)"),
+        }),
+        execute: async ({ symbol }) => {
+          try {
+            const upperSymbol = symbol.toUpperCase()
+            const transactions = await getInsiderTransactions(upperSymbol)
+            return {
+              symbol: upperSymbol,
+              transactions: transactions.slice(0, 20),
+            }
+          } catch {
+            return { error: `Could not fetch insider trading data for ${symbol}` }
           }
         },
       }),
