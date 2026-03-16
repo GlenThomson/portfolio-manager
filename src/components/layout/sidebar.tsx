@@ -22,7 +22,7 @@ const navItems = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
   { label: "Portfolio", href: "/portfolio", icon: Briefcase },
   { label: "Watchlist", href: "/watchlist", icon: Star },
-  { label: "Markets", href: "/stock/AAPL", icon: BarChart3 },
+  { label: "Markets", href: "/markets", icon: BarChart3 },
   { label: "Income", href: "/income", icon: DollarSign },
   { label: "Compare", href: "/compare", icon: GitCompareArrows },
   { label: "AI Chat", href: "/chat", icon: MessageSquare },
