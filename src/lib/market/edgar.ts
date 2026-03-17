@@ -183,6 +183,127 @@ export async function getFilingDocument(
 }
 
 /**
+ * Standard 10-K / 10-Q section patterns.
+ * We match "Item 1A" style headings in the cleaned text.
+ */
+const SECTION_MAP: Record<string, { label: string; patterns: RegExp[] }> = {
+  business: {
+    label: "Item 1 — Business",
+    patterns: [/\bItem\s+1[.\s]*[-–—]?\s*Business\b/i],
+  },
+  risk_factors: {
+    label: "Item 1A — Risk Factors",
+    patterns: [/\bItem\s+1A[.\s]*[-–—]?\s*Risk\s+Factors\b/i],
+  },
+  mda: {
+    label: "Item 7 — Management's Discussion and Analysis",
+    patterns: [
+      /\bItem\s+7[.\s]*[-–—]?\s*Management'?s?\s+Discussion/i,
+    ],
+  },
+  market_risk: {
+    label: "Item 7A — Quantitative and Qualitative Disclosures About Market Risk",
+    patterns: [/\bItem\s+7A[.\s]*[-–—]?\s*Quantitative/i],
+  },
+  financials: {
+    label: "Item 8 — Financial Statements",
+    patterns: [/\bItem\s+8[.\s]*[-–—]?\s*Financial\s+Statements/i],
+  },
+  controls: {
+    label: "Item 9A — Controls and Procedures",
+    patterns: [/\bItem\s+9A[.\s]*[-–—]?\s*Controls/i],
+  },
+}
+
+// Ordered list of all Item headings for finding section boundaries
+const ALL_ITEM_PATTERNS = [
+  /\bItem\s+1[.\s]*[-–—]?\s*Business\b/i,
+  /\bItem\s+1A[.\s]*[-–—]?\s*Risk\s+Factors\b/i,
+  /\bItem\s+1B/i,
+  /\bItem\s+1C/i,
+  /\bItem\s+2[.\s]*[-–—]?\s*Properties\b/i,
+  /\bItem\s+3[.\s]*[-–—]?\s*Legal/i,
+  /\bItem\s+4/i,
+  /\bItem\s+5/i,
+  /\bItem\s+6/i,
+  /\bItem\s+7[.\s]*[-–—]?\s*Management/i,
+  /\bItem\s+7A/i,
+  /\bItem\s+8[.\s]*[-–—]?\s*Financial/i,
+  /\bItem\s+9[.\s]*[-–—]?\s*Changes/i,
+  /\bItem\s+9A/i,
+  /\bItem\s+9B/i,
+  /\bItem\s+10/i,
+  /\bItem\s+11/i,
+  /\bItem\s+12/i,
+  /\bItem\s+13/i,
+  /\bItem\s+14/i,
+  /\bItem\s+15/i,
+  /\bItem\s+16/i,
+]
+
+/**
+ * Extract a specific section from a filing's cleaned text.
+ * Finds the section start, then looks for the next Item heading as the boundary.
+ */
+export function extractSection(
+  text: string,
+  sectionKey: string
+): { section: string; label: string; charCount: number } | null {
+  const sectionDef = SECTION_MAP[sectionKey]
+  if (!sectionDef) return null
+
+  // Find where this section starts
+  let startIdx = -1
+  for (const pattern of sectionDef.patterns) {
+    const match = text.match(pattern)
+    if (match && match.index !== undefined) {
+      startIdx = match.index
+      break
+    }
+  }
+
+  if (startIdx === -1) return null
+
+  // Find the next Item heading after this one to determine the end boundary
+  let endIdx = text.length
+  for (const pattern of ALL_ITEM_PATTERNS) {
+    // Search for matches AFTER our start position
+    const searchText = text.slice(startIdx + 20) // skip past our own heading
+    const match = searchText.match(pattern)
+    if (match && match.index !== undefined) {
+      const candidateEnd = startIdx + 20 + match.index
+      if (candidateEnd < endIdx) {
+        endIdx = candidateEnd
+      }
+    }
+  }
+
+  const section = text.slice(startIdx, endIdx).trim()
+
+  return {
+    section: section.length > 50000 ? section.slice(0, 50000) + "\n\n[Section truncated at 50,000 characters]" : section,
+    label: sectionDef.label,
+    charCount: section.length,
+  }
+}
+
+/**
+ * List available sections found in a filing's text.
+ */
+export function listSections(text: string): string[] {
+  const found: string[] = []
+  for (const [key, def] of Object.entries(SECTION_MAP)) {
+    for (const pattern of def.patterns) {
+      if (pattern.test(text)) {
+        found.push(key)
+        break
+      }
+    }
+  }
+  return found
+}
+
+/**
  * Get the SEC EDGAR URL for a filing.
  * @param cik - The company CIK number (not the filing agent CIK from accession number)
  */
