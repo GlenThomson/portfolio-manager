@@ -16,7 +16,7 @@ import {
   getCompanyNews,
   isFinnhubConfigured,
 } from "@/lib/market/finnhub"
-import { getFilings, getFilingDocument, extractSection, listSections } from "@/lib/market/edgar"
+import { getFilings, getFilingDocument } from "@/lib/market/edgar"
 import {
   scanTopGainers,
   scanTopLosers,
@@ -720,7 +720,7 @@ export async function POST(req: Request) {
 
       readFiling: tool({
         description:
-          "Fetch and read a specific SEC filing. Can read the full filing (truncated) or extract specific sections like risk_factors, mda (Management Discussion & Analysis), financials, business, market_risk, or controls. For 10-K/10-Q filings, ALWAYS use a section parameter to get the most relevant content instead of reading the truncated beginning. You can call this tool multiple times with different sections.",
+          "Fetch and read the full text content of a specific SEC filing. Use getFilings first to find the accession number, document name, and CIK. Returns the filing text (up to 300k characters) for you to analyse and summarise.",
         parameters: z.object({
           accessionNumber: z
             .string()
@@ -738,65 +738,24 @@ export async function POST(req: Request) {
             .describe(
               "The stock ticker symbol — used to resolve the correct company CIK for the filing URL"
             ),
-          section: z
-            .enum(["business", "risk_factors", "mda", "market_risk", "financials", "controls"])
-            .optional()
-            .describe(
-              "Extract a specific section from a 10-K or 10-Q filing. Options: business (Item 1), risk_factors (Item 1A), mda (Item 7 — Management Discussion & Analysis), market_risk (Item 7A), financials (Item 8), controls (Item 9A). Omit to get the beginning of the full filing."
-            ),
         }),
-        execute: async ({ accessionNumber, primaryDocument, symbol, section }) => {
+        execute: async ({ accessionNumber, primaryDocument, symbol }) => {
           try {
             const content = await getFilingDocument(
               accessionNumber,
               primaryDocument,
               symbol
             )
-
-            // If a specific section is requested, extract it
-            if (section) {
-              const extracted = extractSection(content, section)
-              if (extracted) {
-                return {
-                  accessionNumber,
-                  primaryDocument,
-                  section: extracted.label,
-                  contentLength: extracted.charCount,
-                  content: extracted.section,
-                  availableSections: listSections(content),
-                }
-              }
-              // Section not found — fall back to full filing with available sections
-              const available = listSections(content)
-              const truncated =
-                content.length > 30000
-                  ? content.slice(0, 30000) +
-                    "\n\n[Truncated — section not found. Try one of the available sections listed.]"
-                  : content
-              return {
-                accessionNumber,
-                primaryDocument,
-                error: `Section "${section}" not found in this filing`,
-                availableSections: available,
-                contentLength: content.length,
-                content: truncated,
-              }
-            }
-
-            // No section specified — return truncated full filing with available sections
-            const available = listSections(content)
             const truncated =
-              content.length > 30000
-                ? content.slice(0, 30000) +
-                  "\n\n[Truncated at 30,000 characters — use the section parameter to read specific sections: " +
-                  available.join(", ") + "]"
+              content.length > 300000
+                ? content.slice(0, 300000) +
+                  "\n\n[Truncated at 300,000 characters — full filing is " + content.length.toLocaleString() + " characters]"
                 : content
             return {
               accessionNumber,
               primaryDocument,
               contentLength: content.length,
               content: truncated,
-              availableSections: available,
             }
           } catch {
             return {
