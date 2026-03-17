@@ -230,7 +230,7 @@ export function SearchCommand() {
   const showSearchDropdown = showDropdown && (results.length > 0 || hasNoResults)
 
   return (
-    <div ref={containerRef} className="relative flex-1 md:max-w-md">
+    <div ref={containerRef} className="relative w-full md:max-w-lg">
       <form onSubmit={handleSubmit}>
         <div className="relative">
           {isSearching ? (
@@ -321,7 +321,7 @@ export function SearchCommand() {
                       {exchangeLabel(result.exchange)}
                     </Badge>
                   </div>
-                  <span className="text-xs text-muted-foreground truncate max-w-[220px]">
+                  <span className="text-xs text-muted-foreground truncate">
                     {result.shortName}
                   </span>
                 </div>

@@ -26,16 +26,15 @@ export function TopNav() {
         </SheetContent>
       </Sheet>
 
-      {/* Mobile logo */}
-      <div className="flex items-center gap-2 md:hidden">
+      {/* Mobile logo — hidden when search is present to give it more room */}
+      <div className="flex items-center gap-2 md:hidden shrink-0">
         <TrendingUp className="h-5 w-5 text-primary" />
-        <span className="font-bold">PortfolioAI</span>
       </div>
 
       {/* Search with autocomplete */}
-      <SearchCommand />
-
-      <div className="flex-1" />
+      <div className="flex-1 min-w-0">
+        <SearchCommand />
+      </div>
 
       {/* Market status */}
       <div className="hidden sm:flex">
