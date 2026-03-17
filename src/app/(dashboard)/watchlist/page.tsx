@@ -213,20 +213,20 @@ export default function WatchlistPage() {
                     <MiniSparkline data={item.sparklineData} />
                   </div>
                   <div className="ml-auto text-right">
-                    <p className="font-bold">${item.price.toFixed(2)}</p>
+                    <p className="font-bold">{item.price != null ? `$${item.price.toFixed(2)}` : "—"}</p>
                     <p
                       className={cn(
                         "text-sm flex items-center justify-end gap-1",
-                        item.change >= 0 ? "text-green-500" : "text-red-500"
+                        (item.change ?? 0) >= 0 ? "text-green-500" : "text-red-500"
                       )}
                     >
-                      {item.change >= 0 ? (
+                      {(item.change ?? 0) >= 0 ? (
                         <TrendingUp className="h-3 w-3" />
                       ) : (
                         <TrendingDown className="h-3 w-3" />
                       )}
-                      {item.change >= 0 ? "+" : ""}
-                      {item.changePct.toFixed(2)}%
+                      {(item.change ?? 0) >= 0 ? "+" : ""}
+                      {item.changePct != null ? `${item.changePct.toFixed(2)}%` : "—"}
                     </p>
                   </div>
                 </Link>
