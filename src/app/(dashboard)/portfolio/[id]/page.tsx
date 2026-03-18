@@ -24,6 +24,7 @@ import { BrokerConnectDialog } from "@/components/portfolio/broker-connect"
 import { PositionDetailRow } from "@/components/portfolio/position-detail-row"
 import { CsvExport } from "@/components/portfolio/csv-export"
 import { TransactionFilters } from "@/components/portfolio/transaction-filters"
+import { useCurrency } from "@/hooks/useCurrency"
 
 interface Position {
   id: string
@@ -63,6 +64,7 @@ export default function PortfolioDetailPage() {
   const [loading, setLoading] = useState(true)
   const [expandedPositions, setExpandedPositions] = useState<Set<string>>(new Set())
   const searchParams = useSearchParams()
+  const { fmtNative, fmtHome, fmtBoth } = useCurrency()
 
   useEffect(() => {
     fetchData()
@@ -434,7 +436,7 @@ export default function PortfolioDetailPage() {
               </div>
               {form.action === "dividend" && (
                 <p className="text-xs text-muted-foreground">
-                  Total dividend: ${form.quantity && form.price ? (parseFloat(form.quantity) * parseFloat(form.price)).toFixed(2) : "0.00"}
+                  Total dividend: {form.quantity && form.price ? fmtNative(parseFloat(form.quantity) * parseFloat(form.price)) : "$0.00"}
                 </p>
               )}
               <Button type="submit" className="w-full">
@@ -462,7 +464,7 @@ export default function PortfolioDetailPage() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${totalValue.toFixed(2)}</div>
+            <div className="text-2xl font-bold">{fmtHome(totalValue)}</div>
           </CardContent>
         </Card>
         <Card>
@@ -476,7 +478,7 @@ export default function PortfolioDetailPage() {
           </CardHeader>
           <CardContent>
             <div className={`text-2xl font-bold ${totalPnl >= 0 ? "text-green-500" : "text-red-500"}`}>
-              {totalPnl >= 0 ? "+" : ""}${totalPnl.toFixed(2)}
+              {totalPnl >= 0 ? "+" : ""}{fmtHome(Math.abs(totalPnl))}
             </div>
             <p className={`text-xs ${totalPnl >= 0 ? "text-green-500" : "text-red-500"}`}>
               {totalPnlPct >= 0 ? "+" : ""}{totalPnlPct.toFixed(2)}%
@@ -494,7 +496,7 @@ export default function PortfolioDetailPage() {
           </CardHeader>
           <CardContent>
             <div className={`text-2xl font-bold ${totalDayChange.dollars >= 0 ? "text-green-500" : "text-red-500"}`}>
-              {totalDayChange.dollars >= 0 ? "+" : ""}${totalDayChange.dollars.toFixed(2)}
+              {totalDayChange.dollars >= 0 ? "+" : ""}{fmtHome(Math.abs(totalDayChange.dollars))}
             </div>
             <p className={`text-xs ${totalDayChange.dollars >= 0 ? "text-green-500" : "text-red-500"}`}>
               {totalDayChange.percent >= 0 ? "+" : ""}{totalDayChange.percent.toFixed(2)}%
@@ -508,7 +510,7 @@ export default function PortfolioDetailPage() {
               <Wallet className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">${totalCash.toFixed(2)}</div>
+              <div className="text-2xl font-bold">{fmtHome(totalCash)}</div>
               <p className="text-xs text-muted-foreground">
                 {cashPositions.length} currenc{cashPositions.length === 1 ? "y" : "ies"}
               </p>
@@ -623,17 +625,17 @@ export default function PortfolioDetailPage() {
                           </Link>
                         </TableCell>
                         <TableCell className="text-right">{qty}</TableCell>
-                        <TableCell className="text-right">${avgCost.toFixed(2)}</TableCell>
+                        <TableCell className="text-right">{fmtNative(avgCost)}</TableCell>
                         <TableCell className="text-right">
-                          {price > 0 ? `$${price.toFixed(2)}` : "\u2014"}
+                          {price > 0 ? fmtNative(price) : "\u2014"}
                         </TableCell>
                         <TableCell className="text-right">
-                          {price > 0 ? `$${marketValue.toFixed(2)}` : "\u2014"}
+                          {price > 0 ? fmtBoth(marketValue) : "\u2014"}
                         </TableCell>
                         <TableCell className={`text-right ${pnl >= 0 ? "text-green-500" : "text-red-500"}`}>
                           {price > 0 ? (
                             <>
-                              {pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}
+                              {pnl >= 0 ? "+" : ""}{fmtHome(Math.abs(pnl))}
                               <br />
                               <span className="text-xs">
                                 {pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(2)}%
@@ -695,14 +697,14 @@ export default function PortfolioDetailPage() {
                   return (
                     <TableRow key={pos.id}>
                       <TableCell className="font-medium">{currency}</TableCell>
-                      <TableCell className="text-right">${balance.toFixed(2)}</TableCell>
+                      <TableCell className="text-right">{fmtNative(balance, currency)}</TableCell>
                     </TableRow>
                   )
                 })}
                 {cashPositions.length > 1 && (
                   <TableRow className="font-medium">
                     <TableCell>Total</TableCell>
-                    <TableCell className="text-right">${totalCash.toFixed(2)}</TableCell>
+                    <TableCell className="text-right">{fmtHome(totalCash)}</TableCell>
                   </TableRow>
                 )}
               </TableBody>
@@ -725,11 +727,11 @@ export default function PortfolioDetailPage() {
             <div className="grid gap-4 md:grid-cols-3">
               <div>
                 <p className="text-sm text-muted-foreground">Total Dividends (All Time)</p>
-                <p className="text-2xl font-bold text-green-500">${totalDividends.toFixed(2)}</p>
+                <p className="text-2xl font-bold text-green-500">{fmtHome(totalDividends)}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Dividends This Year</p>
-                <p className="text-2xl font-bold">${dividendsThisYear.toFixed(2)}</p>
+                <p className="text-2xl font-bold">{fmtHome(dividendsThisYear)}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Dividend Yield (on Cost)</p>
@@ -772,7 +774,7 @@ export default function PortfolioDetailPage() {
                       <TableRow className="bg-muted/50">
                         <TableCell colSpan={4} className="font-semibold">{year}</TableCell>
                         <TableCell className="text-right font-semibold text-green-500">
-                          ${yearTotal.toFixed(2)}
+                          {fmtHome(yearTotal)}
                         </TableCell>
                       </TableRow>
                       {yearDividends.map((d) => {
@@ -783,9 +785,9 @@ export default function PortfolioDetailPage() {
                               {new Date(d.executed_at).toLocaleDateString()}
                             </TableCell>
                             <TableCell className="font-medium">{d.symbol}</TableCell>
-                            <TableCell className="text-right">${parseFloat(d.price).toFixed(4)}</TableCell>
+                            <TableCell className="text-right">{fmtNative(parseFloat(d.price))}</TableCell>
                             <TableCell className="text-right">{parseFloat(d.quantity)}</TableCell>
-                            <TableCell className="text-right text-green-500">${amount.toFixed(2)}</TableCell>
+                            <TableCell className="text-right text-green-500">{fmtHome(amount)}</TableCell>
                           </TableRow>
                         )
                       })}

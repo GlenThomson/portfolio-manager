@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Plus, Briefcase } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { getCurrentUserId } from "@/lib/supabase/user"
+import { useCurrency } from "@/hooks/useCurrency"
 
 interface Portfolio {
   id: string
@@ -31,8 +32,7 @@ export default function PortfoliosPage() {
   const [isPaper, setIsPaper] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [currencySymbol, setCurrencySymbol] = useState("$")
-  const [fxRate, setFxRate] = useState(1)
+  const { fmtHome } = useCurrency()
 
   useEffect(() => {
     fetchPortfolios()
@@ -51,18 +51,6 @@ export default function PortfoliosPage() {
 
     const portfolioList = data ?? []
     setPortfolios(portfolioList)
-
-    // Fetch user currency preference
-    const { data: profile } = await supabase.from("user_profiles").select("settings").eq("user_id", user.id).single()
-    const userCurrency = (profile?.settings as { defaultCurrency?: string })?.defaultCurrency ?? "USD"
-    const symbols: Record<string, string> = { USD: "$", NZD: "NZ$", AUD: "A$", GBP: "£", EUR: "€" }
-    setCurrencySymbol(symbols[userCurrency] ?? "$")
-    if (userCurrency !== "USD") {
-      try {
-        const fxRes = await fetch(`/api/market/currency?from=USD&to=${userCurrency}`)
-        if (fxRes.ok) { const d = await fxRes.json(); setFxRate(d.rate) }
-      } catch {}
-    }
 
     // Fetch position summaries for each portfolio
     if (portfolioList.length > 0) {
@@ -241,10 +229,10 @@ export default function PortfoliosPage() {
                     const total = (s?.totalValue ?? 0) + (s?.cashTotal ?? 0)
                     return (
                       <>
-                        <p className="text-2xl font-bold">{currencySymbol}{(total * fxRate).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                        <p className="text-2xl font-bold">{fmtHome(total)}</p>
                         <p className="text-sm text-muted-foreground">
                           {s?.positionCount ?? 0} position{(s?.positionCount ?? 0) !== 1 ? "s" : ""}
-                          {(s?.cashTotal ?? 0) > 0 && ` · ${currencySymbol}${(s!.cashTotal * fxRate).toFixed(2)} cash`}
+                          {(s?.cashTotal ?? 0) > 0 && ` · ${fmtHome(s!.cashTotal)} cash`}
                         </p>
                       </>
                     )

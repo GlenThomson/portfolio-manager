@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client"
 import { TableCell, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { ChevronDown, ChevronRight, Loader2 } from "lucide-react"
+import { useCurrency } from "@/hooks/useCurrency"
 
 interface Transaction {
   id: string
@@ -38,6 +39,7 @@ export function PositionDetailRow({
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(false)
   const [fetched, setFetched] = useState(false)
+  const { fmtNative, fmtHome } = useCurrency()
 
   async function handleToggle() {
     if (!expanded && !fetched) {
@@ -101,16 +103,16 @@ export function PositionDetailRow({
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="space-y-1">
               <p className="text-xs text-muted-foreground">Total Cost</p>
-              <p className="text-sm font-medium">${totalCost.toFixed(2)}</p>
+              <p className="text-sm font-medium">{fmtHome(totalCost)}</p>
             </div>
             <div className="space-y-1">
               <p className="text-xs text-muted-foreground">Avg Cost / Share</p>
-              <p className="text-sm font-medium">${averageCost.toFixed(2)}</p>
+              <p className="text-sm font-medium">{fmtNative(averageCost)}</p>
             </div>
             <div className="space-y-1">
               <p className="text-xs text-muted-foreground">Unrealized P&L</p>
               <p className={`text-sm font-medium ${unrealizedPnl >= 0 ? "text-green-500" : "text-red-500"}`}>
-                {unrealizedPnl >= 0 ? "+" : ""}${unrealizedPnl.toFixed(2)}
+                {unrealizedPnl >= 0 ? "+" : ""}{fmtHome(Math.abs(unrealizedPnl))}
               </p>
             </div>
             <div className="space-y-1">
@@ -173,9 +175,9 @@ export function PositionDetailRow({
                             </Badge>
                           </td>
                           <td className="px-3 py-2 text-right">{txQty}</td>
-                          <td className="px-3 py-2 text-right">${txPrice.toFixed(2)}</td>
-                          <td className="px-3 py-2 text-right">${txFees.toFixed(2)}</td>
-                          <td className="px-3 py-2 text-right">${txTotal.toFixed(2)}</td>
+                          <td className="px-3 py-2 text-right">{fmtNative(txPrice)}</td>
+                          <td className="px-3 py-2 text-right">{fmtNative(txFees)}</td>
+                          <td className="px-3 py-2 text-right">{fmtHome(txTotal)}</td>
                         </tr>
                       )
                     })}

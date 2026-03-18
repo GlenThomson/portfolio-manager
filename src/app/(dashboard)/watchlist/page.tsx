@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { MiniSparkline } from "@/components/charts/mini-sparkline"
 import { Plus, Star, TrendingUp, TrendingDown, X } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useCurrency } from "@/hooks/useCurrency"
 
 interface WatchlistItem {
   symbol: string
@@ -28,6 +29,7 @@ export default function WatchlistPage() {
   const [newSymbol, setNewSymbol] = useState("")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [loading, setLoading] = useState(true)
+  const { fmtNative } = useCurrency()
 
   useEffect(() => {
     fetchWatchlist()
@@ -213,7 +215,7 @@ export default function WatchlistPage() {
                     <MiniSparkline data={item.sparklineData} />
                   </div>
                   <div className="ml-auto text-right">
-                    <p className="font-bold">{item.price != null ? `$${item.price.toFixed(2)}` : "—"}</p>
+                    <p className="font-bold">{item.price != null ? fmtNative(item.price) : "—"}</p>
                     <p
                       className={cn(
                         "text-sm flex items-center justify-end gap-1",

@@ -10,8 +10,7 @@ interface Holding {
 interface AllocationChartProps {
   holdings: Holding[]
   cashTotal?: number
-  currencySymbol?: string
-  fxRate?: number
+  fmtHome?: (val: number) => string
 }
 
 const COLORS = [
@@ -29,7 +28,9 @@ const COLORS = [
   "#e11d48", // rose
 ]
 
-export function AllocationChart({ holdings, cashTotal = 0, currencySymbol = "$", fxRate = 1 }: AllocationChartProps) {
+const defaultFmt = (val: number) => `$${val.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
+
+export function AllocationChart({ holdings, cashTotal = 0, fmtHome = defaultFmt }: AllocationChartProps) {
   const data = useMemo(() => {
     // Aggregate by symbol
     const map = new Map<string, number>()
@@ -122,7 +123,7 @@ export function AllocationChart({ holdings, cashTotal = 0, currencySymbol = "$",
             className="fill-muted-foreground"
             fontSize="10"
           >
-            {currencySymbol}{(grandTotal * fxRate).toLocaleString("en-US", { maximumFractionDigits: 0 })}
+            {fmtHome(grandTotal)}
           </text>
         </svg>
       </div>
@@ -140,7 +141,7 @@ export function AllocationChart({ holdings, cashTotal = 0, currencySymbol = "$",
               {(seg.pct * 100).toFixed(1)}%
             </span>
             <span className="text-muted-foreground flex-shrink-0 w-20 text-right">
-              {currencySymbol}{(seg.value * fxRate).toLocaleString("en-US", { maximumFractionDigits: 0 })}
+              {fmtHome(seg.value)}
             </span>
           </div>
         ))}
@@ -152,7 +153,7 @@ export function AllocationChart({ holdings, cashTotal = 0, currencySymbol = "$",
               {grandTotal > 0 ? ((cashTotal / grandTotal) * 100).toFixed(1) : "0.0"}%
             </span>
             <span className="text-muted-foreground flex-shrink-0 w-20 text-right">
-              {currencySymbol}{(cashTotal * fxRate).toLocaleString("en-US", { maximumFractionDigits: 0 })}
+              {fmtHome(cashTotal)}
             </span>
           </div>
         )}

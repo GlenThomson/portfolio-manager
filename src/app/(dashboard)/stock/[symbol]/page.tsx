@@ -13,6 +13,7 @@ import { createClient } from "@/lib/supabase/client"
 import { getCurrentUserId } from "@/lib/supabase/user"
 import { cn } from "@/lib/utils"
 import type { Quote, OHLC } from "@/types/market"
+import { useCurrency } from "@/hooks/useCurrency"
 
 function formatNum(n: number) {
   if (n >= 1e12) return `$${(n / 1e12).toFixed(2)}T`
@@ -229,6 +230,7 @@ export default function StockDetailPage() {
     }
   }
 
+  const { fmtNative } = useCurrency()
   const isPositive = (quote?.regularMarketChange ?? 0) >= 0
 
   return (
@@ -242,7 +244,7 @@ export default function StockDetailPage() {
               <span className="text-sm text-muted-foreground">{quote.shortName}</span>
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-bold">${quote.regularMarketPrice.toFixed(2)}</span>
+              <span className="text-2xl font-bold">{fmtNative(quote.regularMarketPrice)}</span>
               <span className={cn("text-sm font-medium", isPositive ? "text-[#26a69a]" : "text-[#ef5350]")}>
                 {isPositive ? "+" : ""}{quote.regularMarketChange.toFixed(2)} ({isPositive ? "+" : ""}{quote.regularMarketChangePercent.toFixed(2)}%)
               </span>
@@ -304,12 +306,12 @@ export default function StockDetailPage() {
       {quote && (
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-px rounded-md overflow-hidden" style={{ background: "#2a2e39" }}>
           {[
-            { label: "Prev Close", value: `$${quote.regularMarketPreviousClose.toFixed(2)}` },
-            { label: "Open", value: `$${quote.regularMarketOpen.toFixed(2)}` },
-            { label: "Day Low", value: `$${quote.regularMarketDayLow.toFixed(2)}` },
-            { label: "Day High", value: `$${quote.regularMarketDayHigh.toFixed(2)}` },
-            { label: "52W Low", value: `$${quote.fiftyTwoWeekLow.toFixed(2)}` },
-            { label: "52W High", value: `$${quote.fiftyTwoWeekHigh.toFixed(2)}` },
+            { label: "Prev Close", value: fmtNative(quote.regularMarketPreviousClose) },
+            { label: "Open", value: fmtNative(quote.regularMarketOpen) },
+            { label: "Day Low", value: fmtNative(quote.regularMarketDayLow) },
+            { label: "Day High", value: fmtNative(quote.regularMarketDayHigh) },
+            { label: "52W Low", value: fmtNative(quote.fiftyTwoWeekLow) },
+            { label: "52W High", value: fmtNative(quote.fiftyTwoWeekHigh) },
             { label: "Volume", value: formatVol(quote.regularMarketVolume) },
             { label: "Mkt Cap", value: formatNum(quote.marketCap) },
           ].map((stat) => (

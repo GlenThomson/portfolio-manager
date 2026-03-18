@@ -12,6 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { DollarSign, TrendingUp, BarChart3 } from "lucide-react"
+import { useCurrency } from "@/hooks/useCurrency"
 
 interface DividendRecord {
   id: string
@@ -33,6 +34,7 @@ export default function IncomePage() {
   const [dividends, setDividends] = useState<DividendRecord[]>([])
   const [portfolios, setPortfolios] = useState<PortfolioInfo[]>([])
   const [loading, setLoading] = useState(true)
+  const { fmtNative, fmtHome } = useCurrency()
 
   useEffect(() => {
     fetchData()
@@ -127,7 +129,7 @@ export default function IncomePage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-500">
-              ${totalIncomeYTD.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {fmtHome(totalIncomeYTD)}
             </div>
             <p className="text-xs text-muted-foreground">{currentYear}</p>
           </CardContent>
@@ -140,7 +142,7 @@ export default function IncomePage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              ${monthlyAverage.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {fmtHome(monthlyAverage)}
             </div>
             <p className="text-xs text-muted-foreground">Per month this year</p>
           </CardContent>
@@ -156,7 +158,7 @@ export default function IncomePage() {
               <>
                 <div className="text-2xl font-bold">{topPayer[0]}</div>
                 <p className="text-xs text-muted-foreground">
-                  ${topPayer[1].toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} total
+                  {fmtHome(topPayer[1])} total
                 </p>
               </>
             ) : (
@@ -183,7 +185,7 @@ export default function IncomePage() {
                 return (
                   <div key={i} className="flex-1 flex flex-col items-center gap-1">
                     <span className="text-[10px] text-muted-foreground">
-                      {amount > 0 ? `$${amount.toFixed(0)}` : ""}
+                      {amount > 0 ? fmtHome(amount) : ""}
                     </span>
                     <div className="w-full flex items-end" style={{ height: "160px" }}>
                       <svg width="100%" height="160" className="overflow-visible">
@@ -240,9 +242,9 @@ export default function IncomePage() {
                       <TableCell className="text-muted-foreground">
                         {portfolioMap[d.portfolio_id] ?? "Unknown"}
                       </TableCell>
-                      <TableCell className="text-right">${parseFloat(d.price).toFixed(4)}</TableCell>
+                      <TableCell className="text-right">{fmtNative(parseFloat(d.price))}</TableCell>
                       <TableCell className="text-right">{parseFloat(d.quantity)}</TableCell>
-                      <TableCell className="text-right text-green-500">${amount.toFixed(2)}</TableCell>
+                      <TableCell className="text-right text-green-500">{fmtHome(amount)}</TableCell>
                     </TableRow>
                   )
                 })}

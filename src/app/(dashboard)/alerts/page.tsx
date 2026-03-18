@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/table"
 import { Bell, Trash2, RefreshCw } from "lucide-react"
 import { CreateAlertDialog } from "@/components/alerts/create-alert-dialog"
+import { useCurrency } from "@/hooks/useCurrency"
 
 interface Alert {
   id: string
@@ -41,6 +42,7 @@ export default function AlertsPage() {
   const [loading, setLoading] = useState(true)
   const [checking, setChecking] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
+  const { fmtNative } = useCurrency()
 
   const fetchAlerts = useCallback(async () => {
     try {
@@ -115,10 +117,7 @@ export default function AlertsPage() {
     if (alert.condition_type === "pct_change") {
       return `${parseFloat(alert.condition_value).toFixed(1)}%`
     }
-    return `$${parseFloat(alert.condition_value).toLocaleString("en-US", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`
+    return fmtNative(parseFloat(alert.condition_value))
   }
 
   if (loading) {
@@ -199,13 +198,7 @@ export default function AlertsPage() {
                     <TableCell>{formatConditionValue(alert)}</TableCell>
                     <TableCell>
                       {quotes[alert.symbol]
-                        ? `$${quotes[alert.symbol].price.toLocaleString(
-                            "en-US",
-                            {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            }
-                          )}`
+                        ? fmtNative(quotes[alert.symbol].price)
                         : "--"}
                     </TableCell>
                     <TableCell>

@@ -17,6 +17,7 @@ import { Briefcase, TrendingUp, TrendingDown, DollarSign, Plus, ArrowRight, Star
 import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 import { AllocationChart } from "@/components/dashboard/allocation-chart"
+import { useCurrency } from "@/hooks/useCurrency"
 
 interface Portfolio {
   id: string
@@ -74,8 +75,7 @@ export default function DashboardPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [marketNews, setMarketNews] = useState<MarketNewsItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [currency, setCurrency] = useState("USD")
-  const [fxRate, setFxRate] = useState(1)
+  const { fmtNative, fmtHome } = useCurrency()
 
   useEffect(() => {
     fetchDashboardData()
@@ -86,26 +86,12 @@ export default function DashboardPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
-    const [portfolioRes, positionsRes, watchlistRes, transactionsRes, profileRes] = await Promise.all([
+    const [portfolioRes, positionsRes, watchlistRes, transactionsRes] = await Promise.all([
       supabase.from("portfolios").select("id, name, is_paper").eq("user_id", user.id).order("created_at", { ascending: false }),
       supabase.from("portfolio_positions").select("symbol, quantity, average_cost, portfolio_id, asset_type").eq("user_id", user.id).is("closed_at", null),
       supabase.from("watchlists").select("symbols").eq("user_id", user.id).limit(1).single(),
       supabase.from("transactions").select("id, symbol, action, quantity, price, executed_at, portfolio_id").eq("user_id", user.id).order("executed_at", { ascending: false }).limit(5),
-      supabase.from("user_profiles").select("settings").eq("user_id", user.id).single(),
     ])
-
-    // Get user's preferred currency and fetch exchange rate
-    const userCurrency = (profileRes.data?.settings as { defaultCurrency?: string })?.defaultCurrency ?? "USD"
-    setCurrency(userCurrency)
-    if (userCurrency !== "USD") {
-      try {
-        const fxRes = await fetch(`/api/market/currency?from=USD&to=${userCurrency}`)
-        if (fxRes.ok) {
-          const fxData = await fxRes.json()
-          setFxRate(fxData.rate)
-        }
-      } catch {}
-    }
 
     const portfolioData = portfolioRes.data ?? []
     const positionData = positionsRes.data ?? []
@@ -171,9 +157,6 @@ export default function DashboardPage() {
     } catch {}
   }
 
-  // Currency formatting helper
-  const currencySymbol = currency === "USD" ? "$" : currency === "NZD" ? "NZ$" : currency === "AUD" ? "A$" : currency === "GBP" ? "£" : currency === "EUR" ? "€" : "$"
-  const fmt = (val: number) => `${currencySymbol}${(val * fxRate).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   // Separate stock and cash positions
   const stockPositions = positions.filter((p) => p.asset_type !== "cash")
   const cashPositions = positions.filter((p) => p.asset_type === "cash")
@@ -366,7 +349,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {fmt(totalValue)}
+              {fmtHome(totalValue)}
             </div>
             <p className="text-xs text-muted-foreground">
               {positions.length > 0 ? `Across ${portfolios.length} portfolio${portfolios.length !== 1 ? "s" : ""}` : "Add positions to get started"}
@@ -385,7 +368,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className={cn("text-2xl font-bold", dayChange >= 0 ? "text-green-500" : "text-red-500")}>
-              {dayChange >= 0 ? "+" : "-"}{currencySymbol}{(Math.abs(dayChange) * fxRate).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {dayChange >= 0 ? "+" : ""}{fmtHome(dayChange)}
             </div>
             <p className={cn("text-xs", dayChange >= 0 ? "text-green-500" : "text-red-500")}>
               {dayChangePct >= 0 ? "+" : ""}{dayChangePct.toFixed(2)}%
@@ -404,7 +387,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className={cn("text-2xl font-bold", totalPnl >= 0 ? "text-green-500" : "text-red-500")}>
-              {totalPnl >= 0 ? "+" : "-"}{currencySymbol}{(Math.abs(totalPnl) * fxRate).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {totalPnl >= 0 ? "+" : ""}{fmtHome(totalPnl)}
             </div>
             <p className={cn("text-xs", totalPnl >= 0 ? "text-green-500" : "text-red-500")}>
               {totalPnlPct >= 0 ? "+" : ""}{totalPnlPct.toFixed(2)}%
@@ -445,7 +428,7 @@ export default function DashboardPage() {
                 </p>
               </div>
             ) : (
-              <AllocationChart holdings={allocationHoldings} cashTotal={totalCash} currencySymbol={currencySymbol} fxRate={fxRate} />
+              <AllocationChart holdings={allocationHoldings} cashTotal={totalCash} fmtHome={fmtHome} />
             )}
           </CardContent>
         </Card>
@@ -490,7 +473,7 @@ export default function DashboardPage() {
                     </div>
                     <div className="text-right flex items-center gap-3">
                       <span className="text-sm font-medium">
-                        {fmt(mover.price)}
+                        {fmtNative(mover.price)}
                       </span>
                       <div className={cn(
                         "flex items-center gap-1 min-w-[80px] justify-end",
@@ -582,10 +565,10 @@ export default function DashboardPage() {
                         </TableCell>
                         <TableCell className="text-right">{qty.toFixed(2)}</TableCell>
                         <TableCell className="text-right">
-                          {price > 0 ? fmt(price) : "—"}
+                          {price > 0 ? fmtNative(price) : "—"}
                         </TableCell>
                         <TableCell className="text-right font-medium">
-                          {total > 0 ? fmt(total) : "—"}
+                          {total > 0 ? fmtHome(total) : "—"}
                         </TableCell>
                         <TableCell>
                           <Link
@@ -693,7 +676,7 @@ export default function DashboardPage() {
                       </div>
                       <div className="text-right">
                         <span className="text-sm font-medium">
-                          {fmt(value)}
+                          {fmtHome(value)}
                         </span>
                         <span className="text-xs text-muted-foreground ml-2">
                           {portfolioPositions.length} pos
@@ -744,7 +727,7 @@ export default function DashboardPage() {
                       <span className="text-xs text-muted-foreground ml-2 hidden sm:inline">{item.shortName}</span>
                     </div>
                     <div className="text-right">
-                      <span className="text-sm font-medium">{fmt(item.price)}</span>
+                      <span className="text-sm font-medium">{fmtNative(item.price)}</span>
                       <span className={cn("text-xs ml-2", item.change >= 0 ? "text-green-500" : "text-red-500")}>
                         {item.change >= 0 ? "+" : ""}{item.changePct.toFixed(2)}%
                       </span>
