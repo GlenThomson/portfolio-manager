@@ -33,7 +33,7 @@ import { getWSBTrending, getStockMentions, getStockSentiment } from "@/lib/marke
 import { getStockScore } from "@/lib/scoring"
 import { getMacroSnapshot, isFredConfigured, getFredSeries, FRED_SERIES } from "@/lib/market/fred"
 import { getPutCallSnapshot } from "@/lib/market/cboe"
-import { compareFilings } from "@/lib/analysis/filing-comparison"
+import { getFilingPair, fetchAndExtractSections } from "@/lib/analysis/filing-comparison"
 import { computeHRPAllocation } from "@/lib/optimization/hrp"
 import { computeKellySize } from "@/lib/optimization/kelly"
 import { detectMarketRegime } from "@/lib/optimization/regime"
@@ -781,7 +781,7 @@ export async function POST(req: Request) {
 
       compareFilings: tool({
         description:
-          "Compare a company's two most recent annual (10-K) or quarterly (10-Q) SEC filings side by side. Extracts Risk Factors, MD&A, and Business sections from both filings and returns them for analysis. Use when users ask to compare filings, check for risk changes, or analyze trajectory shifts between reporting periods.",
+          "Start a filing comparison by finding the two most recent 10-K or 10-Q filings for a company. This is STEP 1 — it returns filing metadata quickly. You MUST then call extractFilingSections twice (once per filing) to download and extract section content. Tell the user what you're doing at each step.",
         parameters: z.object({
           symbol: z.string().describe("The stock ticker symbol (e.g. AAPL, MSFT)"),
           filingType: z
@@ -791,10 +791,56 @@ export async function POST(req: Request) {
         }),
         execute: async ({ symbol, filingType = "10-K" }) => {
           try {
-            const result = await compareFilings(symbol.toUpperCase(), filingType)
-            return result
+            const pair = await getFilingPair(symbol.toUpperCase(), filingType)
+            return {
+              ...pair,
+              instruction: `Found two ${filingType} filings for ${symbol.toUpperCase()}:
+- Current: ${pair.current.date}
+- Prior: ${pair.prior.date}
+
+Now you MUST:
+1. Tell the user you found the filings and are downloading the current (${pair.current.date}) filing
+2. Call extractFilingSections for the CURRENT filing
+3. Tell the user you're now downloading the prior (${pair.prior.date}) filing
+4. Call extractFilingSections for the PRIOR filing
+5. Compare the extracted sections and provide your analysis
+
+Narrate each step so the user sees progress.`,
+            }
           } catch (error) {
-            return { error: `Could not compare filings for ${symbol}: ${String(error)}` }
+            return { error: `Could not find filings for ${symbol}: ${String(error)}` }
+          }
+        },
+      }),
+
+      extractFilingSections: tool({
+        description:
+          "Download a single SEC filing and extract key sections (Risk Factors, MD&A, Business). This is STEP 2 of filing comparison — call this after compareFilings returns the filing metadata. Downloads the full filing from SEC EDGAR and extracts sections. This step takes 30-60 seconds per filing.",
+        parameters: z.object({
+          symbol: z.string().describe("The stock ticker symbol"),
+          accessionNumber: z.string().describe("Filing accession number from compareFilings result"),
+          primaryDocument: z.string().describe("Primary document filename from compareFilings result"),
+          filingType: z
+            .enum(["10-K", "10-Q"])
+            .describe("Filing type"),
+          filingDate: z.string().describe("Filing date for labeling"),
+        }),
+        execute: async ({ symbol, accessionNumber, primaryDocument, filingType, filingDate }) => {
+          try {
+            const result = await fetchAndExtractSections(
+              symbol.toUpperCase(),
+              accessionNumber,
+              primaryDocument,
+              filingType,
+              filingDate,
+            )
+            return {
+              ...result,
+              sectionsFound: result.sections.map(s => s.name),
+              message: `Extracted ${result.sections.length} sections (${result.totalWordCount.toLocaleString()} words) from ${filingDate} ${filingType}`,
+            }
+          } catch (error) {
+            return { error: `Could not extract sections from ${filingDate} filing: ${String(error)}` }
           }
         },
       }),
