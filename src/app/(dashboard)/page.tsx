@@ -1,6 +1,5 @@
 "use client"
 
-import { useEffect, useState } from "react"
 import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -14,50 +13,10 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Briefcase, TrendingUp, TrendingDown, DollarSign, Plus, ArrowRight, Star, Activity, ArrowUpDown, Receipt, Newspaper, ExternalLink } from "lucide-react"
-import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 import { AllocationChart } from "@/components/dashboard/allocation-chart"
 import { useCurrency } from "@/hooks/useCurrency"
-
-interface Portfolio {
-  id: string
-  name: string
-  is_paper: boolean
-}
-
-interface Position {
-  symbol: string
-  quantity: string
-  average_cost: string
-  portfolio_id: string
-  asset_type?: string
-}
-
-interface WatchlistQuote {
-  symbol: string
-  shortName: string
-  price: number
-  change: number
-  changePct: number
-}
-
-interface Transaction {
-  id: string
-  symbol: string
-  action: string
-  quantity: string
-  price: string
-  executed_at: string
-  portfolio_id: string
-}
-
-interface MarketNewsItem {
-  title: string
-  publisher: string
-  link: string
-  publishedAt: string
-  thumbnail: string | null
-}
+import { useDashboardData, useMarketNews } from "@/hooks/use-dashboard-data"
 
 interface TopMover {
   symbol: string
@@ -68,94 +27,17 @@ interface TopMover {
 }
 
 export default function DashboardPage() {
-  const [portfolios, setPortfolios] = useState<Portfolio[]>([])
-  const [positions, setPositions] = useState<Position[]>([])
-  const [quotes, setQuotes] = useState<Record<string, { price: number; change: number; changePct: number }>>({})
-  const [watchlistQuotes, setWatchlistQuotes] = useState<WatchlistQuote[]>([])
-  const [transactions, setTransactions] = useState<Transaction[]>([])
-  const [marketNews, setMarketNews] = useState<MarketNewsItem[]>([])
-  const [loading, setLoading] = useState(true)
+  const { data, isLoading } = useDashboardData()
+  const { data: marketNews = [] } = useMarketNews()
   const { fmtNative, fmtHome } = useCurrency()
 
-  useEffect(() => {
-    fetchDashboardData()
-  }, [])
-
-  async function fetchDashboardData() {
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-
-    const [portfolioRes, positionsRes, watchlistRes, transactionsRes] = await Promise.all([
-      supabase.from("portfolios").select("id, name, is_paper").eq("user_id", user.id).order("created_at", { ascending: false }),
-      supabase.from("portfolio_positions").select("symbol, quantity, average_cost, portfolio_id, asset_type").eq("user_id", user.id).is("closed_at", null),
-      supabase.from("watchlists").select("symbols").eq("user_id", user.id).limit(1).single(),
-      supabase.from("transactions").select("id, symbol, action, quantity, price, executed_at, portfolio_id").eq("user_id", user.id).order("executed_at", { ascending: false }).limit(5),
-    ])
-
-    const portfolioData = portfolioRes.data ?? []
-    const positionData = positionsRes.data ?? []
-    setPortfolios(portfolioData)
-    setPositions(positionData)
-    setTransactions(transactionsRes.data ?? [])
-
-    // Fetch live quotes for all position symbols (exclude cash)
-    const stockPositions = positionData.filter((p: { asset_type?: string }) => p.asset_type !== "cash")
-    const posSymbols = Array.from(new Set(stockPositions.map((p) => p.symbol)))
-
-    // Watchlist symbols
-    const watchSymbols: string[] = watchlistRes.data?.symbols ?? []
-
-    // Combine all unique symbols for a single quote fetch
-    const allSymbols = Array.from(new Set([...posSymbols, ...watchSymbols.slice(0, 10)]))
-
-    if (allSymbols.length > 0) {
-      try {
-        const res = await fetch(`/api/market/quote?symbols=${allSymbols.join(",")}`)
-        if (res.ok) {
-          const data = await res.json()
-          const list = Array.isArray(data) ? data : [data]
-          const quoteMap: Record<string, { price: number; change: number; changePct: number }> = {}
-          list.forEach((q: { symbol: string; regularMarketPrice: number; regularMarketChange: number; regularMarketChangePercent: number; shortName?: string }) => {
-            quoteMap[q.symbol] = {
-              price: q.regularMarketPrice,
-              change: q.regularMarketChange,
-              changePct: q.regularMarketChangePercent,
-            }
-          })
-          setQuotes(quoteMap)
-
-          // Build watchlist quotes from the same data
-          const wlQuotes: WatchlistQuote[] = []
-          list.forEach((q: { symbol: string; regularMarketPrice: number; regularMarketChange: number; regularMarketChangePercent: number; shortName?: string }) => {
-            if (watchSymbols.includes(q.symbol)) {
-              wlQuotes.push({
-                symbol: q.symbol,
-                shortName: q.shortName ?? q.symbol,
-                price: q.regularMarketPrice,
-                change: q.regularMarketChange,
-                changePct: q.regularMarketChangePercent,
-              })
-            }
-          })
-          setWatchlistQuotes(wlQuotes.slice(0, 5))
-        }
-      } catch {}
-    }
-
-    setLoading(false)
-
-    // Fetch market news (non-blocking)
-    try {
-      const newsRes = await fetch("/api/market/news?category=general")
-      if (newsRes.ok) {
-        const newsData = await newsRes.json()
-        if (Array.isArray(newsData)) {
-          setMarketNews(newsData.slice(0, 5))
-        }
-      }
-    } catch {}
-  }
+  const {
+    portfolios = [],
+    positions = [],
+    quotes = {},
+    watchlistQuotes = [],
+    transactions = [],
+  } = data ?? {}
 
   // Separate stock and cash positions
   const stockPositions = positions.filter((p) => p.asset_type !== "cash")
@@ -263,7 +145,7 @@ export default function DashboardPage() {
   // Portfolio name lookup for transactions
   const portfolioMap = new Map(portfolios.map((p) => [p.id, p.name]))
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="space-y-6">
         <div className="h-8 w-48 bg-muted rounded animate-pulse" />

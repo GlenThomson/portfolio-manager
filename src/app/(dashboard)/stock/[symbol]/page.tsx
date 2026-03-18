@@ -2,7 +2,12 @@
 
 import { useEffect, useState, useCallback, useRef } from "react"
 import { useParams } from "next/navigation"
-import { StockChart } from "@/components/charts/stock-chart"
+import dynamic from "next/dynamic"
+
+const StockChart = dynamic(
+  () => import("@/components/charts/stock-chart").then((m) => ({ default: m.StockChart })),
+  { ssr: false, loading: () => <div className="h-[400px] bg-muted rounded-lg animate-pulse" /> }
+)
 import { FundamentalsGrid } from "@/components/market/fundamentals-grid"
 import { SecFilings } from "@/components/market/sec-filings"
 import { RedditSentiment } from "@/components/market/reddit-sentiment"

@@ -30,7 +30,9 @@ export async function GET(request: NextRequest) {
     try {
       if (isFinnhubConfigured()) {
         const articles = await getMarketNews(category)
-        return NextResponse.json(normalizeFinnhub(articles))
+        return NextResponse.json(normalizeFinnhub(articles), {
+          headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" },
+        })
       }
     } catch (error) {
       console.error("Finnhub market news error, falling back to Yahoo:", error)
@@ -39,7 +41,9 @@ export async function GET(request: NextRequest) {
     // Fallback: use Yahoo search with a general term
     try {
       const news = await getYahooNews("market")
-      return NextResponse.json(news)
+      return NextResponse.json(news, {
+        headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" },
+      })
     } catch {
       return NextResponse.json([])
     }
@@ -60,7 +64,9 @@ export async function GET(request: NextRequest) {
     if (isFinnhubConfigured()) {
       const articles = await getCompanyNews(upperSymbol)
       if (articles.length > 0) {
-        return NextResponse.json(normalizeFinnhub(articles))
+        return NextResponse.json(normalizeFinnhub(articles), {
+          headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" },
+        })
       }
     }
   } catch (error) {
@@ -70,7 +76,9 @@ export async function GET(request: NextRequest) {
   // Fallback to Yahoo news
   try {
     const news = await getYahooNews(upperSymbol)
-    return NextResponse.json(news)
+    return NextResponse.json(news, {
+      headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" },
+    })
   } catch (error) {
     console.error("News fetch error:", error)
     return NextResponse.json(

@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getFearGreedIndex } from "@/lib/market/fear-greed"
 
-export const dynamic = "force-dynamic"
-
 export async function GET(request: NextRequest) {
   try {
     const range = request.nextUrl.searchParams.get("range") ?? "1y"
@@ -37,7 +35,9 @@ export async function GET(request: NextRequest) {
     }
 
     const data = await getFearGreedIndex(startDate)
-    return NextResponse.json(data)
+    return NextResponse.json(data, {
+      headers: { "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=7200" },
+    })
   } catch (error) {
     console.error("Fear & Greed fetch error:", error)
     return NextResponse.json(

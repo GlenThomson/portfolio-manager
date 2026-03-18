@@ -11,22 +11,24 @@ export async function GET(req: NextRequest) {
   const symbol = searchParams.get("symbol")
 
   try {
+    const cacheHeaders = { "Cache-Control": "public, s-maxage=600, stale-while-revalidate=1200" }
+
     // Single stock sentiment
     if (symbol) {
       const sentiment = await getStockSentiment(symbol)
-      return NextResponse.json(sentiment)
+      return NextResponse.json(sentiment, { headers: cacheHeaders })
     }
 
     // WSB trending
     if (type === "trending") {
       const trending = await getWSBTrending(25)
-      return NextResponse.json(trending)
+      return NextResponse.json(trending, { headers: cacheHeaders })
     }
 
     // Top mentions across reddit
     if (type === "mentions") {
       const mentions = await getStockMentions()
-      return NextResponse.json(mentions)
+      return NextResponse.json(mentions, { headers: cacheHeaders })
     }
 
     return NextResponse.json(

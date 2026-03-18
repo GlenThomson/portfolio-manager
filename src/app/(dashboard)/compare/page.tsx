@@ -2,14 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback, useMemo } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import {
-  createChart,
-  type IChartApi,
-  ColorType,
-  CrosshairMode,
-  LineSeries,
-  type Time,
-} from "lightweight-charts"
+import type { IChartApi, Time } from "lightweight-charts"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Plus, X, Loader2 } from "lucide-react"
@@ -225,78 +218,86 @@ export default function ComparePage() {
 
     const container = chartContainerRef.current
 
-    const chart = createChart(container, {
-      height: 450,
-      layout: {
-        textColor: TEXT_COLOR,
-        background: { type: ColorType.Solid, color: CHART_BG },
-        fontFamily: "'Trebuchet MS', Roboto, sans-serif",
-        fontSize: 11,
-        attributionLogo: false,
-      },
-      grid: {
-        vertLines: { color: GRID_COLOR },
-        horzLines: { color: GRID_COLOR },
-      },
-      crosshair: {
-        mode: CrosshairMode.Normal,
-        vertLine: { color: CROSSHAIR_COLOR, width: 1 as const, style: 3 as const, labelBackgroundColor: "#2a2e39" },
-        horzLine: { color: CROSSHAIR_COLOR, width: 1 as const, style: 3 as const, labelBackgroundColor: "#2a2e39" },
-      },
-      rightPriceScale: {
-        borderColor: BORDER_COLOR,
-        scaleMargins: { top: 0.1, bottom: 0.1 },
-      },
-      timeScale: {
-        borderColor: BORDER_COLOR,
-        timeVisible: false,
-        rightOffset: 5,
-        barSpacing: 6,
-      },
-    })
+    let cancelled = false
 
-    chartRef.current = chart
+    import("lightweight-charts").then(({ createChart, ColorType, CrosshairMode, LineSeries }) => {
+      if (cancelled) return
 
-    // Add a line series for each symbol
-    activeSymbols.forEach((sym, idx) => {
-      const rawData = chartDataMap[sym]
-      if (!rawData || rawData.length === 0) return
-
-      const normalized = normalizeToPercent(rawData)
-      if (normalized.length === 0) return
-
-      const series = chart.addSeries(LineSeries, {
-        color: LINE_COLORS[idx % LINE_COLORS.length],
-        lineWidth: 2,
-        priceLineVisible: false,
-        lastValueVisible: true,
-        title: sym,
-        priceFormat: {
-          type: "custom",
-          formatter: (price: number) => `${price >= 0 ? "+" : ""}${price.toFixed(2)}%`,
+      const chart = createChart(container, {
+        height: 450,
+        layout: {
+          textColor: TEXT_COLOR,
+          background: { type: ColorType.Solid, color: CHART_BG },
+          fontFamily: "'Trebuchet MS', Roboto, sans-serif",
+          fontSize: 11,
+          attributionLogo: false,
+        },
+        grid: {
+          vertLines: { color: GRID_COLOR },
+          horzLines: { color: GRID_COLOR },
+        },
+        crosshair: {
+          mode: CrosshairMode.Normal,
+          vertLine: { color: CROSSHAIR_COLOR, width: 1 as const, style: 3 as const, labelBackgroundColor: "#2a2e39" },
+          horzLine: { color: CROSSHAIR_COLOR, width: 1 as const, style: 3 as const, labelBackgroundColor: "#2a2e39" },
+        },
+        rightPriceScale: {
+          borderColor: BORDER_COLOR,
+          scaleMargins: { top: 0.1, bottom: 0.1 },
+        },
+        timeScale: {
+          borderColor: BORDER_COLOR,
+          timeVisible: false,
+          rightOffset: 5,
+          barSpacing: 6,
         },
       })
 
-      series.setData(
-        normalized.map((d) => ({ time: d.time as Time, value: d.value }))
-      )
-    })
+      chartRef.current = chart
 
-    chart.timeScale().fitContent()
+      // Add a line series for each symbol
+      activeSymbols.forEach((sym, idx) => {
+        const rawData = chartDataMap[sym]
+        if (!rawData || rawData.length === 0) return
 
-    // Resize observer
-    const resizeObserver = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const w = entry.contentRect.width
-        if (w > 0) chart.applyOptions({ width: w })
-      }
+        const normalized = normalizeToPercent(rawData)
+        if (normalized.length === 0) return
+
+        const series = chart.addSeries(LineSeries, {
+          color: LINE_COLORS[idx % LINE_COLORS.length],
+          lineWidth: 2,
+          priceLineVisible: false,
+          lastValueVisible: true,
+          title: sym,
+          priceFormat: {
+            type: "custom",
+            formatter: (price: number) => `${price >= 0 ? "+" : ""}${price.toFixed(2)}%`,
+          },
+        })
+
+        series.setData(
+          normalized.map((d) => ({ time: d.time as Time, value: d.value }))
+        )
+      })
+
+      chart.timeScale().fitContent()
+
+      // Resize observer
+      const resizeObserver = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const w = entry.contentRect.width
+          if (w > 0) chart.applyOptions({ width: w })
+        }
+      })
+      resizeObserver.observe(container)
     })
-    resizeObserver.observe(container)
 
     return () => {
-      resizeObserver.disconnect()
-      chart.remove()
-      chartRef.current = null
+      cancelled = true
+      if (chartRef.current) {
+        chartRef.current.remove()
+        chartRef.current = null
+      }
     }
   }, [chartDataMap, activeSymbols])
 

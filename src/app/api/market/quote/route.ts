@@ -14,11 +14,15 @@ export async function GET(request: NextRequest) {
 
     if (symbolList.length === 1) {
       const quote = await getQuote(symbolList[0])
-      return NextResponse.json(quote)
+      return NextResponse.json(quote, {
+        headers: { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60" },
+      })
     }
 
     const quotes = await getMultipleQuotes(symbolList)
-    return NextResponse.json(quotes)
+    return NextResponse.json(quotes, {
+      headers: { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60" },
+    })
   } catch (error) {
     console.error("Quote fetch error:", error)
     return NextResponse.json({ error: "Failed to fetch quote" }, { status: 500 })

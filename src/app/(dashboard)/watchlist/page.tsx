@@ -1,107 +1,36 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import Link from "next/link"
+import { useQueryClient } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
 import { getCurrentUserId } from "@/lib/supabase/user"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { MiniSparkline } from "@/components/charts/mini-sparkline"
+import dynamic from "next/dynamic"
+
+const MiniSparkline = dynamic(
+  () => import("@/components/charts/mini-sparkline").then((m) => ({ default: m.MiniSparkline })),
+  { ssr: false }
+)
 import { Plus, Star, TrendingUp, TrendingDown, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useCurrency } from "@/hooks/useCurrency"
-
-interface WatchlistItem {
-  symbol: string
-  shortName: string
-  price: number
-  change: number
-  changePct: number
-  sparklineData: { time: number; value: number }[]
-}
+import { useWatchlistMeta, useWatchlistQuotes } from "@/hooks/use-watchlist-data"
 
 export default function WatchlistPage() {
-  const [watchlistId, setWatchlistId] = useState<string | null>(null)
-  const [symbols, setSymbols] = useState<string[]>([])
-  const [items, setItems] = useState<WatchlistItem[]>([])
   const [newSymbol, setNewSymbol] = useState("")
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [loading, setLoading] = useState(true)
   const { fmtNative } = useCurrency()
+  const queryClient = useQueryClient()
 
-  useEffect(() => {
-    fetchWatchlist()
-  }, [])
+  const { data: meta, isLoading } = useWatchlistMeta()
+  const watchlistId = meta?.id ?? null
+  const symbols = meta?.symbols ?? []
 
-  useEffect(() => {
-    if (symbols.length > 0) {
-      fetchQuotesAndSparklines()
-    }
-  }, [symbols])
-
-  async function fetchWatchlist() {
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-
-    const { data } = await supabase
-      .from("watchlists")
-      .select("*")
-      .eq("user_id", user.id)
-      .limit(1)
-      .single()
-
-    if (data) {
-      setWatchlistId(data.id)
-      setSymbols(data.symbols ?? [])
-    }
-    setLoading(false)
-  }
-
-  async function fetchQuotesAndSparklines() {
-    try {
-      const symbolList = symbols.join(",")
-      const [quotesRes, ...chartResponses] = await Promise.all([
-        fetch(`/api/market/quote?symbols=${symbolList}`),
-        ...symbols.map((s) =>
-          fetch(`/api/market/chart?symbol=${s}&period=5d&interval=15m`)
-        ),
-      ])
-
-      const quotesData = await quotesRes.json()
-      const quotes = Array.isArray(quotesData) ? quotesData : [quotesData]
-
-      const chartDataMap: Record<string, { time: number; value: number }[]> = {}
-      for (let i = 0; i < symbols.length; i++) {
-        try {
-          const chartData = await chartResponses[i].json()
-          chartDataMap[symbols[i]] = chartData
-            .filter((d: { time: number; close: number }) => d.close > 0)
-            .map((d: { time: number; close: number }) => ({
-              time: d.time,
-              value: d.close,
-            }))
-        } catch {
-          chartDataMap[symbols[i]] = []
-        }
-      }
-
-      const newItems: WatchlistItem[] = quotes.map((q: Record<string, unknown>) => ({
-        symbol: q.symbol as string,
-        shortName: q.shortName as string,
-        price: q.regularMarketPrice as number,
-        change: q.regularMarketChange as number,
-        changePct: q.regularMarketChangePercent as number,
-        sparklineData: chartDataMap[q.symbol as string] ?? [],
-      }))
-
-      setItems(newItems)
-    } catch (error) {
-      console.error("Failed to fetch watchlist data:", error)
-    }
-  }
+  const { data: items = [] } = useWatchlistQuotes(symbols)
 
   async function addSymbol(e: React.FormEvent) {
     e.preventDefault()
@@ -119,15 +48,16 @@ export default function WatchlistPage() {
         .update({ symbols: newSymbols })
         .eq("id", watchlistId)
     } else {
-      const { data } = await supabase
+      await supabase
         .from("watchlists")
         .insert({ user_id: userId, name: "My Watchlist", symbols: newSymbols })
         .select("id")
         .single()
-      if (data) setWatchlistId(data.id)
     }
 
-    setSymbols(newSymbols)
+    // Invalidate both watchlist queries so they refetch
+    queryClient.invalidateQueries({ queryKey: ["watchlist-meta"] })
+    queryClient.invalidateQueries({ queryKey: ["watchlist-quotes"] })
     setNewSymbol("")
     setDialogOpen(false)
   }
@@ -141,11 +71,11 @@ export default function WatchlistPage() {
       .update({ symbols: newSymbols })
       .eq("id", watchlistId)
 
-    setSymbols(newSymbols)
-    setItems(items.filter((i) => i.symbol !== symbol))
+    queryClient.invalidateQueries({ queryKey: ["watchlist-meta"] })
+    queryClient.invalidateQueries({ queryKey: ["watchlist-quotes"] })
   }
 
-  if (loading) {
+  if (isLoading) {
     return <div className="animate-pulse h-96 bg-muted rounded-lg" />
   }
 

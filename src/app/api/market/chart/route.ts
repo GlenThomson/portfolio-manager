@@ -93,7 +93,9 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    return NextResponse.json(data)
+    return NextResponse.json(data, {
+      headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=120" },
+    })
   } catch (error: any) {
     // Return empty data for out-of-range requests instead of 500
     if (error?.message?.includes("not available for startTime")) {

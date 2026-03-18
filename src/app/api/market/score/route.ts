@@ -14,7 +14,9 @@ export async function GET(request: NextRequest) {
 
   try {
     const score = await getStockScore(symbol)
-    return NextResponse.json(score)
+    return NextResponse.json(score, {
+      headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" },
+    })
   } catch (error) {
     console.error("Score fetch error:", error)
     return NextResponse.json(

@@ -1,5 +1,6 @@
 "use client"
 
+import { memo } from "react"
 import { TrendingUp, Menu } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -11,7 +12,7 @@ import { Sidebar } from "./sidebar"
 import { SearchCommand } from "./search-command"
 import { MarketStatus } from "@/components/market/market-status"
 
-export function TopNav() {
+export const TopNav = memo(function TopNav() {
   return (
     <header className="sticky top-0 z-50 flex h-14 items-center gap-4 border-b border-border bg-card px-4">
       {/* Mobile menu */}
@@ -42,7 +43,7 @@ export function TopNav() {
       </div>
     </header>
   )
-}
+})
 
 function MobileSidebar() {
   return (
