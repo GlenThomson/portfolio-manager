@@ -33,6 +33,7 @@ import { getWSBTrending, getStockMentions, getStockSentiment } from "@/lib/marke
 import { getStockScore } from "@/lib/scoring"
 import { getMacroSnapshot, isFredConfigured, getFredSeries, FRED_SERIES } from "@/lib/market/fred"
 import { getPutCallSnapshot } from "@/lib/market/cboe"
+import { compareFilings } from "@/lib/analysis/filing-comparison"
 import { computeHRPAllocation } from "@/lib/optimization/hrp"
 import { computeKellySize } from "@/lib/optimization/kelly"
 import { detectMarketRegime } from "@/lib/optimization/regime"
@@ -774,6 +775,26 @@ export async function POST(req: Request) {
             return {
               error: `Could not read filing ${accessionNumber}/${primaryDocument}`,
             }
+          }
+        },
+      }),
+
+      compareFilings: tool({
+        description:
+          "Compare a company's two most recent annual (10-K) or quarterly (10-Q) SEC filings side by side. Extracts Risk Factors, MD&A, and Business sections from both filings and returns them for analysis. Use when users ask to compare filings, check for risk changes, or analyze trajectory shifts between reporting periods.",
+        parameters: z.object({
+          symbol: z.string().describe("The stock ticker symbol (e.g. AAPL, MSFT)"),
+          filingType: z
+            .enum(["10-K", "10-Q"])
+            .optional()
+            .describe("Filing type to compare — '10-K' for annual (default), '10-Q' for quarterly"),
+        }),
+        execute: async ({ symbol, filingType = "10-K" }) => {
+          try {
+            const result = await compareFilings(symbol.toUpperCase(), filingType)
+            return result
+          } catch (error) {
+            return { error: `Could not compare filings for ${symbol}: ${String(error)}` }
           }
         },
       }),
