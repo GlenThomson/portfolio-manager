@@ -455,11 +455,11 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
     let markersPlugin: ISeriesMarkersPluginApi<Time> | null = null
     if (indicators.find((i) => i.id === "events")?.active) {
       series["events-anchor"] = mainChart.addSeries(LineSeries, {
-        color: "transparent",
+        color: "rgba(0,0,0,0)",
         lineWidth: 1,
         priceLineVisible: false,
         lastValueVisible: false,
-        visible: false,
+        crosshairMarkerVisible: false,
         priceScaleId: "events",
       })
       mainChart.priceScale("events").applyOptions({
