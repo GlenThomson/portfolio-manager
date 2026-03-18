@@ -961,7 +961,7 @@ After gathering all data, synthesize into the structured Research Report format 
 
       getStockScore: tool({
         description:
-          "Get a comprehensive multi-factor stock score (0-100) with letter grade. Combines technical indicators (RSI, MACD, SMA, Bollinger), fundamentals (P/E, margins, growth, ROE), sentiment (news, Reddit, Fear & Greed), and momentum (3m/6m returns). Returns an overall score, letter grade (A+ to F), sub-scores for each factor, and detailed explanations.",
+          "Get a research-backed multi-factor stock score (0-100) with letter grade. Factors: Momentum 30% (price momentum + EPS revisions), Fundamental 30% (P/E, margins, growth, ROE), Technical 20% (RSI, MACD, SMA, Bollinger), Sentiment 10% (news, Reddit contrarian, analyst dispersion, insider activity), Risk 10% (beta, ATR, max drawdown). Returns overall score, grade (A+ to F), 5 sub-scores, key drivers (top 3 reasons), signal freshness per factor, and detailed explanations.",
         parameters: z.object({
           symbol: z
             .string()

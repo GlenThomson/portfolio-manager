@@ -1,6 +1,12 @@
 /**
- * Sentiment score (0-100) combining news headlines, Reddit sentiment,
- * analyst recommendations, and Fear & Greed macro overlay.
+ * Sentiment score (0-100) combining news headlines, Reddit sentiment (contrarian),
+ * analyst consensus + dispersion, insider activity, and Fear & Greed macro overlay.
+ *
+ * Research adjustments:
+ *   - Reddit/WSB: contrarian warning at extremes (high attention = -8.5% returns)
+ *   - Analyst dispersion: low = positive, high = warning (Yale research)
+ *   - Analyst targets: discounted ~15% for systematic upward bias
+ *   - Insider C-suite cluster buys weighted higher (>50bps/month abnormal returns)
  */
 
 export interface SentimentInput {
@@ -16,6 +22,14 @@ export interface SentimentInput {
   fearGreedScore: number | null
   // Analyst recommendation
   recommendationKey: string | null
+  // Analyst dispersion (standard deviation of recommendation distribution)
+  analystDispersion: number | null
+  // Analyst price target
+  targetMeanPrice: number | null
+  currentPrice: number | null
+  // Insider activity (from Finnhub)
+  insiderNetBuys: number | null // net purchases in last 90 days
+  insiderCsuitebuys: number | null // C-suite buys specifically
 }
 
 export interface SentimentScoreResult {
@@ -84,40 +98,48 @@ export function computeSentimentScore(input: SentimentInput): SentimentScoreResu
     details.news = "No recent news headlines found"
   }
 
-  // Reddit sentiment contribution (up to +/- 15)
+  // Reddit sentiment — CONTRARIAN at extremes (research: WSB attention = -8.5% returns)
   if (input.wsbSentimentScore != null) {
-    // wsbSentimentScore is 0-1, map to -15 to +15
-    const redditPoints = Math.round((input.wsbSentimentScore - 0.5) * 30)
-    score += redditPoints
-
+    const mentions = input.redditMentions ?? 0
     const sentiment = input.wsbSentiment ?? (input.wsbSentimentScore > 0.5 ? "Bullish" : "Bearish")
     const pct = Math.round(input.wsbSentimentScore * 100)
-    details.reddit = `Reddit/WSB: ${sentiment} (${pct}% score)`
 
-    if (input.redditMentions != null && input.redditMentions > 0) {
-      details.reddit += `, ${input.redditMentions} mentions`
+    if (mentions > 50 && input.wsbSentimentScore > 0.7) {
+      // High attention + very bullish = contrarian warning
+      score -= 8
+      details.reddit = `Reddit/WSB: ${sentiment} (${pct}%), ${mentions} mentions — contrarian warning (high hype)`
+    } else if (mentions > 50 && input.wsbSentimentScore < 0.3) {
+      // High attention + very bearish = potential contrarian buy
+      score += 5
+      details.reddit = `Reddit/WSB: ${sentiment} (${pct}%), ${mentions} mentions — contrarian bullish (extreme fear)`
+    } else {
+      // Normal levels — mild influence
+      const redditPoints = Math.round((input.wsbSentimentScore - 0.5) * 10)
+      score += redditPoints
+      details.reddit = `Reddit/WSB: ${sentiment} (${pct}%)`
+      if (mentions > 0) details.reddit += `, ${mentions} mentions`
     }
   } else {
     details.reddit = "No Reddit sentiment data available"
   }
 
-  // Analyst recommendation contribution (up to +/- 10)
+  // Analyst consensus + dispersion
   if (input.recommendationKey) {
     const key = input.recommendationKey.toLowerCase()
     if (key === "strong_buy" || key === "strongbuy") {
-      score += 10
-      details.analysts = "Analyst consensus: Strong Buy (+10)"
+      score += 8
+      details.analysts = "Analyst consensus: Strong Buy"
     } else if (key === "buy") {
-      score += 6
-      details.analysts = "Analyst consensus: Buy (+6)"
+      score += 5
+      details.analysts = "Analyst consensus: Buy"
     } else if (key === "hold") {
       details.analysts = "Analyst consensus: Hold (neutral)"
     } else if (key === "sell" || key === "underperform") {
-      score -= 6
-      details.analysts = `Analyst consensus: ${input.recommendationKey} (-6)`
+      score -= 5
+      details.analysts = `Analyst consensus: ${input.recommendationKey}`
     } else if (key === "strong_sell" || key === "strongsell") {
-      score -= 10
-      details.analysts = "Analyst consensus: Strong Sell (-10)"
+      score -= 8
+      details.analysts = "Analyst consensus: Strong Sell"
     } else {
       details.analysts = `Analyst consensus: ${input.recommendationKey}`
     }
@@ -125,21 +147,76 @@ export function computeSentimentScore(input: SentimentInput): SentimentScoreResu
     details.analysts = "Analyst recommendation unavailable"
   }
 
-  // Fear & Greed macro overlay (+/- 10)
+  // Analyst dispersion (research: low dispersion = positive signal)
+  if (input.analystDispersion != null) {
+    if (input.analystDispersion < 0.8) {
+      score += 5
+      details.dispersion = `Analyst dispersion low (${input.analystDispersion.toFixed(2)}) — strong consensus agreement`
+    } else if (input.analystDispersion < 1.5) {
+      details.dispersion = `Analyst dispersion moderate (${input.analystDispersion.toFixed(2)})`
+    } else {
+      score -= 5
+      details.dispersion = `Analyst dispersion high (${input.analystDispersion.toFixed(2)}) — significant disagreement`
+    }
+  }
+
+  // Analyst price target (discounted 15% for upward bias)
+  if (input.targetMeanPrice != null && input.currentPrice != null && input.currentPrice > 0) {
+    const adjustedTarget = input.targetMeanPrice * 0.85
+    const upside = ((adjustedTarget - input.currentPrice) / input.currentPrice) * 100
+
+    if (upside > 20) {
+      score += 5
+      details.priceTarget = `Adjusted target $${adjustedTarget.toFixed(0)} (+${upside.toFixed(0)}% upside, raw target discounted 15%)`
+    } else if (upside > 5) {
+      score += 2
+      details.priceTarget = `Adjusted target $${adjustedTarget.toFixed(0)} (+${upside.toFixed(0)}% upside after 15% discount)`
+    } else if (upside < -10) {
+      score -= 5
+      details.priceTarget = `Adjusted target $${adjustedTarget.toFixed(0)} (${upside.toFixed(0)}% downside even after 15% bias discount)`
+    } else {
+      details.priceTarget = `Adjusted target $${adjustedTarget.toFixed(0)} (near current price after 15% bias discount)`
+    }
+  }
+
+  // Insider activity (research: C-suite cluster buys = strongest signal)
+  if (input.insiderNetBuys != null) {
+    const cSuiteBuys = input.insiderCsuitebuys ?? 0
+
+    if (cSuiteBuys >= 2) {
+      // C-suite cluster buying — strongest insider signal
+      score += 8
+      details.insider = `${cSuiteBuys} C-suite insider purchases in 90 days — strong bullish signal`
+    } else if (input.insiderNetBuys > 3) {
+      score += 5
+      details.insider = `Net ${input.insiderNetBuys} insider purchases in 90 days — bullish activity`
+    } else if (input.insiderNetBuys > 0) {
+      score += 2
+      details.insider = `Net ${input.insiderNetBuys} insider purchase(s) in 90 days`
+    } else if (input.insiderNetBuys < -3) {
+      score -= 5
+      details.insider = `Net ${Math.abs(input.insiderNetBuys)} insider sales in 90 days — bearish activity`
+    } else if (input.insiderNetBuys < 0) {
+      score -= 2
+      details.insider = `Net ${Math.abs(input.insiderNetBuys)} insider sale(s) in 90 days`
+    } else {
+      details.insider = "No significant insider activity in 90 days"
+    }
+  }
+
+  // Fear & Greed macro overlay (+/- 8)
   if (input.fearGreedScore != null && !isNaN(input.fearGreedScore)) {
     if (input.fearGreedScore <= 20) {
-      // Extreme fear = contrarian bullish
-      score += 10
+      score += 8
       details.fearGreed = `Fear & Greed ${input.fearGreedScore} (Extreme Fear) — contrarian bullish`
     } else if (input.fearGreedScore <= 35) {
-      score += 5
+      score += 4
       details.fearGreed = `Fear & Greed ${input.fearGreedScore} (Fear) — mildly contrarian bullish`
     } else if (input.fearGreedScore >= 80) {
-      // Extreme greed = contrarian bearish
-      score -= 10
+      score -= 8
       details.fearGreed = `Fear & Greed ${input.fearGreedScore} (Extreme Greed) — contrarian bearish`
     } else if (input.fearGreedScore >= 65) {
-      score -= 5
+      score -= 4
       details.fearGreed = `Fear & Greed ${input.fearGreedScore} (Greed) — mildly contrarian bearish`
     } else {
       details.fearGreed = `Fear & Greed ${input.fearGreedScore} — neutral macro sentiment`

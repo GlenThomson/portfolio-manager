@@ -1,7 +1,16 @@
 /**
- * Composite score — combines technical, fundamental, sentiment, and momentum
- * with configurable weights. Converts to letter grade.
+ * Composite score — combines technical, fundamental, sentiment, momentum,
+ * and risk with research-backed weights. Converts to letter grade.
+ *
+ * Weight rationale (academic research):
+ *   Momentum + EPS: 30% — strongest predictor (Morningstar, Mill Street)
+ *   Fundamental:     30% — longest half-life at 25.3 months
+ *   Technical:       20% — RSI + Bollinger best win rate
+ *   Sentiment:       10% — analyst dispersion > consensus
+ *   Risk:            10% — beta, volatility, drawdown
  */
+
+export type SignalFreshness = "fresh" | "aging" | "stale"
 
 export interface StockScore {
   symbol: string
@@ -11,76 +20,18 @@ export interface StockScore {
   fundamental: number
   sentiment: number
   momentum: number
+  risk: number
+  keyDrivers: string[]
+  signalFreshness: Record<string, SignalFreshness>
   details: Record<string, string>
 }
 
 const WEIGHTS = {
-  technical: 0.30,
-  fundamental: 0.35,
-  sentiment: 0.20,
-  momentum: 0.15,
-}
-
-/**
- * Compute momentum score (0-100) from 3-month and 6-month price returns.
- */
-export function computeMomentumScore(
-  currentPrice: number,
-  price3mAgo: number | null,
-  price6mAgo: number | null,
-): { score: number; details: Record<string, string> } {
-  const details: Record<string, string> = {}
-  let score = 50
-
-  if (price3mAgo != null && price3mAgo > 0) {
-    const ret3m = ((currentPrice - price3mAgo) / price3mAgo) * 100
-    if (ret3m > 20) {
-      score += 20
-      details.return3m = `3-month return +${ret3m.toFixed(1)}% — strong upward momentum`
-    } else if (ret3m > 10) {
-      score += 12
-      details.return3m = `3-month return +${ret3m.toFixed(1)}% — good momentum`
-    } else if (ret3m > 0) {
-      score += 5
-      details.return3m = `3-month return +${ret3m.toFixed(1)}% — mild positive momentum`
-    } else if (ret3m > -10) {
-      score -= 5
-      details.return3m = `3-month return ${ret3m.toFixed(1)}% — mild negative momentum`
-    } else if (ret3m > -20) {
-      score -= 12
-      details.return3m = `3-month return ${ret3m.toFixed(1)}% — poor momentum`
-    } else {
-      score -= 20
-      details.return3m = `3-month return ${ret3m.toFixed(1)}% — severe downward momentum`
-    }
-  } else {
-    details.return3m = "3-month data unavailable"
-  }
-
-  if (price6mAgo != null && price6mAgo > 0) {
-    const ret6m = ((currentPrice - price6mAgo) / price6mAgo) * 100
-    if (ret6m > 30) {
-      score += 15
-      details.return6m = `6-month return +${ret6m.toFixed(1)}% — strong trend`
-    } else if (ret6m > 10) {
-      score += 8
-      details.return6m = `6-month return +${ret6m.toFixed(1)}% — positive trend`
-    } else if (ret6m > 0) {
-      score += 3
-      details.return6m = `6-month return +${ret6m.toFixed(1)}% — mild uptrend`
-    } else if (ret6m > -15) {
-      score -= 5
-      details.return6m = `6-month return ${ret6m.toFixed(1)}% — mild downtrend`
-    } else {
-      score -= 15
-      details.return6m = `6-month return ${ret6m.toFixed(1)}% — strong downtrend`
-    }
-  } else {
-    details.return6m = "6-month data unavailable"
-  }
-
-  score = Math.max(0, Math.min(100, score))
-  return { score, details }
+  momentum: 0.30,
+  fundamental: 0.30,
+  technical: 0.20,
+  sentiment: 0.10,
+  risk: 0.10,
 }
 
 export function toLetterGrade(score: number): string {
@@ -93,31 +44,86 @@ export function toLetterGrade(score: number): string {
   return "F"
 }
 
-export function computeCompositeScore(
-  technicalScore: number,
-  fundamentalScore: number,
-  sentimentScore: number,
-  momentumScore: number,
+/**
+ * Extract top 3 key drivers — the factors with the largest deviation from neutral (50).
+ */
+function extractKeyDrivers(
+  scores: { label: string; score: number; prefix: string }[],
   allDetails: Record<string, string>,
-  symbol: string,
-): StockScore {
+): string[] {
+  // Sort by absolute deviation from 50 (neutral)
+  const sorted = [...scores].sort(
+    (a, b) => Math.abs(b.score - 50) - Math.abs(a.score - 50)
+  )
+
+  const drivers: string[] = []
+
+  for (const factor of sorted) {
+    if (drivers.length >= 3) break
+
+    const direction = factor.score >= 50 ? "positive" : "negative"
+
+    // Find the most impactful detail for this factor
+    const relevantDetails = Object.entries(allDetails)
+      .filter(([k]) => k.startsWith(factor.prefix))
+      .map(([, v]) => v)
+      .filter(Boolean)
+
+    if (relevantDetails.length > 0) {
+      // Pick the first detail (most important one)
+      drivers.push(`${factor.label} (${direction}): ${relevantDetails[0]}`)
+    } else if (Math.abs(factor.score - 50) >= 10) {
+      drivers.push(`${factor.label}: ${direction} signal (score ${factor.score})`)
+    }
+  }
+
+  return drivers
+}
+
+export interface CompositeInput {
+  technicalScore: number
+  fundamentalScore: number
+  sentimentScore: number
+  momentumScore: number
+  riskScore: number
+  allDetails: Record<string, string>
+  symbol: string
+  signalFreshness: Record<string, SignalFreshness>
+}
+
+export function computeCompositeScore(input: CompositeInput): StockScore {
   const overall = Math.round(
-    technicalScore * WEIGHTS.technical +
-    fundamentalScore * WEIGHTS.fundamental +
-    sentimentScore * WEIGHTS.sentiment +
-    momentumScore * WEIGHTS.momentum
+    input.technicalScore * WEIGHTS.technical +
+    input.fundamentalScore * WEIGHTS.fundamental +
+    input.sentimentScore * WEIGHTS.sentiment +
+    input.momentumScore * WEIGHTS.momentum +
+    input.riskScore * WEIGHTS.risk
   )
 
   const clampedOverall = Math.max(0, Math.min(100, overall))
 
+  const keyDrivers = extractKeyDrivers(
+    [
+      { label: "Momentum", score: input.momentumScore, prefix: "mom_" },
+      { label: "Fundamental", score: input.fundamentalScore, prefix: "fund_" },
+      { label: "Technical", score: input.technicalScore, prefix: "tech_" },
+      { label: "Sentiment", score: input.sentimentScore, prefix: "sent_" },
+      { label: "Risk", score: input.riskScore, prefix: "risk_" },
+    ],
+    input.allDetails,
+  )
+
   return {
-    symbol,
+    symbol: input.symbol,
     overall: clampedOverall,
     grade: toLetterGrade(clampedOverall),
-    technical: technicalScore,
-    fundamental: fundamentalScore,
-    sentiment: sentimentScore,
-    momentum: momentumScore,
-    details: allDetails,
+    technical: input.technicalScore,
+    fundamental: input.fundamentalScore,
+    sentiment: input.sentimentScore,
+    momentum: input.momentumScore,
+    risk: input.riskScore,
+    keyDrivers,
+    signalFreshness: input.signalFreshness,
+    details: input.allDetails,
   }
 }

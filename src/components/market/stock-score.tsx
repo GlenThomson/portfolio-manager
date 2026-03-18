@@ -10,6 +10,9 @@ interface StockScoreData {
   fundamental: number
   sentiment: number
   momentum: number
+  risk: number
+  keyDrivers: string[]
+  signalFreshness: Record<string, string>
   details: Record<string, string>
 }
 
@@ -27,16 +30,24 @@ function scoreBarColor(score: number): string {
   return "#ef5350"
 }
 
+function freshnessColor(freshness: string): string {
+  if (freshness === "fresh") return "#26a69a"
+  if (freshness === "aging") return "#ffa726"
+  return "#ef5350"
+}
+
 function ScoreBar({
   label,
   score,
   detailKeys,
   details,
+  freshness,
 }: {
   label: string
   score: number
   detailKeys: string[]
   details: Record<string, string>
+  freshness?: string
 }) {
   const [expanded, setExpanded] = useState(false)
   const relevantDetails = detailKeys
@@ -50,7 +61,16 @@ function ScoreBar({
         onClick={() => setExpanded(!expanded)}
         type="button"
       >
-        <span style={{ color: "#d1d4dc" }}>{label}</span>
+        <span className="flex items-center gap-1.5" style={{ color: "#d1d4dc" }}>
+          {label}
+          {freshness && (
+            <span
+              className="inline-block w-1.5 h-1.5 rounded-full"
+              style={{ background: freshnessColor(freshness) }}
+              title={`Signal: ${freshness}`}
+            />
+          )}
+        </span>
         <span className="font-medium" style={{ color: scoreBarColor(score) }}>
           {score}
         </span>
@@ -117,6 +137,7 @@ export function StockScore({ symbol }: { symbol: string }) {
               <div className="h-2 w-full bg-slate-800 rounded animate-pulse" />
               <div className="h-2 w-full bg-slate-800 rounded animate-pulse" />
               <div className="h-2 w-full bg-slate-800 rounded animate-pulse" />
+              <div className="h-2 w-full bg-slate-800 rounded animate-pulse" />
             </div>
           </div>
         </div>
@@ -127,6 +148,7 @@ export function StockScore({ symbol }: { symbol: string }) {
   if (error || !data) return null
 
   const gc = gradeColor(data.grade)
+  const freshness = data.signalFreshness ?? {}
 
   return (
     <div className="space-y-3">
@@ -158,39 +180,82 @@ export function StockScore({ symbol }: { symbol: string }) {
           </div>
         </div>
 
+        {/* Key drivers */}
+        {data.keyDrivers && data.keyDrivers.length > 0 && (
+          <div
+            className="mb-4 p-2.5 rounded text-[11px] space-y-1"
+            style={{ background: "#1a1e2e", color: "#a0a4b0" }}
+          >
+            <div className="text-[10px] uppercase tracking-wider font-medium mb-1" style={{ color: "#787b86" }}>
+              Key Drivers
+            </div>
+            {data.keyDrivers.map((driver, i) => (
+              <div key={i} className="flex items-start gap-1.5">
+                <span style={{ color: "#787b86" }}>{i + 1}.</span>
+                <span>{driver}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Factor bars */}
         <div className="space-y-3">
           <ScoreBar
-            label="Technical"
-            score={data.technical}
-            detailKeys={Object.keys(data.details).filter((k) => k.startsWith("tech_"))}
+            label="Momentum"
+            score={data.momentum}
+            detailKeys={Object.keys(data.details).filter((k) => k.startsWith("mom_"))}
             details={data.details}
+            freshness={freshness.momentum}
           />
           <ScoreBar
             label="Fundamental"
             score={data.fundamental}
             detailKeys={Object.keys(data.details).filter((k) => k.startsWith("fund_"))}
             details={data.details}
+            freshness={freshness.fundamental}
+          />
+          <ScoreBar
+            label="Technical"
+            score={data.technical}
+            detailKeys={Object.keys(data.details).filter((k) => k.startsWith("tech_"))}
+            details={data.details}
+            freshness={freshness.technical}
           />
           <ScoreBar
             label="Sentiment"
             score={data.sentiment}
             detailKeys={Object.keys(data.details).filter((k) => k.startsWith("sent_"))}
             details={data.details}
+            freshness={freshness.sentiment}
           />
           <ScoreBar
-            label="Momentum"
-            score={data.momentum}
-            detailKeys={Object.keys(data.details).filter((k) => k.startsWith("mom_"))}
+            label="Risk"
+            score={data.risk}
+            detailKeys={Object.keys(data.details).filter((k) => k.startsWith("risk_"))}
             details={data.details}
+            freshness={freshness.risk}
           />
         </div>
 
         <div
-          className="text-[10px] mt-3 pt-2 border-t"
+          className="text-[10px] mt-3 pt-2 border-t flex items-center justify-between"
           style={{ color: "#787b86", borderColor: "#2a2e39" }}
         >
-          Weights: Technical 30% | Fundamental 35% | Sentiment 20% | Momentum 15%
+          <span>Mom 30% | Fund 30% | Tech 20% | Sent 10% | Risk 10%</span>
+          <span className="flex items-center gap-2">
+            <span className="flex items-center gap-0.5">
+              <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: "#26a69a" }} />
+              fresh
+            </span>
+            <span className="flex items-center gap-0.5">
+              <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: "#ffa726" }} />
+              aging
+            </span>
+            <span className="flex items-center gap-0.5">
+              <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: "#ef5350" }} />
+              stale
+            </span>
+          </span>
         </div>
       </div>
     </div>
