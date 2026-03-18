@@ -33,6 +33,9 @@ import { getWSBTrending, getStockMentions, getStockSentiment } from "@/lib/marke
 import { getStockScore } from "@/lib/scoring"
 import { getMacroSnapshot, isFredConfigured, getFredSeries, FRED_SERIES } from "@/lib/market/fred"
 import { getPutCallSnapshot } from "@/lib/market/cboe"
+import { computeHRPAllocation } from "@/lib/optimization/hrp"
+import { computeKellySize } from "@/lib/optimization/kelly"
+import { detectMarketRegime } from "@/lib/optimization/regime"
 import { db } from "@/lib/db"
 import {
   portfolios,
@@ -1085,6 +1088,114 @@ After gathering all data, synthesize into the structured Research Report format 
             }
           } catch (error) {
             return { error: `Failed to analyze portfolio health: ${String(error)}` }
+          }
+        },
+      }),
+
+      getOptimalAllocation: tool({
+        description:
+          "Compute optimal portfolio allocation using Hierarchical Risk Parity (HRP). Analyzes correlations between holdings and suggests risk-balanced weights. Use when users ask 'how should I allocate', 'optimal weights', 'rebalance', or 'risk parity'.",
+        parameters: z.object({
+          portfolioId: z
+            .string()
+            .optional()
+            .describe("Optional portfolio ID. If not provided, uses the first portfolio."),
+        }),
+        execute: async ({ portfolioId }) => {
+          try {
+            const portfolioFilter = portfolioId
+              ? and(eq(portfolios.userId, userId), eq(portfolios.id, portfolioId))
+              : eq(portfolios.userId, userId)
+
+            const userPortfolios = await db
+              .select()
+              .from(portfolios)
+              .where(portfolioFilter)
+
+            if (userPortfolios.length === 0) {
+              return { error: "No portfolios found" }
+            }
+
+            const targetPortfolio = userPortfolios[0]
+
+            const positions = await db
+              .select()
+              .from(portfolioPositions)
+              .where(
+                and(
+                  eq(portfolioPositions.portfolioId, targetPortfolio.id),
+                  eq(portfolioPositions.userId, userId),
+                  isNull(portfolioPositions.closedAt)
+                )
+              )
+
+            const stockPositions = positions.filter((p) => p.assetType !== "cash")
+
+            if (stockPositions.length < 2) {
+              return { error: "Need at least 2 positions for allocation optimization" }
+            }
+
+            // Get current quotes for weights
+            const quotes = await Promise.all(
+              stockPositions.map(async (p) => {
+                try {
+                  const q = await getQuote(p.symbol)
+                  return { symbol: p.symbol, price: q.regularMarketPrice, qty: Number(p.quantity) }
+                } catch {
+                  return { symbol: p.symbol, price: Number(p.averageCost), qty: Number(p.quantity) }
+                }
+              })
+            )
+
+            const totalValue = quotes.reduce((s, q) => s + q.price * q.qty, 0)
+            const symbols = quotes.map(q => q.symbol)
+            const currentWeights = quotes.map(q => totalValue > 0 ? (q.price * q.qty) / totalValue : 0)
+
+            const result = await computeHRPAllocation(symbols, currentWeights)
+            return { portfolioName: targetPortfolio.name, ...result }
+          } catch (error) {
+            return { error: `Failed to compute allocation: ${String(error)}` }
+          }
+        },
+      }),
+
+      getPositionSize: tool({
+        description:
+          "Calculate optimal position size using Half-Kelly criterion. Based on historical win rate and win/loss ratio. Use when users ask 'how much should I buy', 'position size', 'how much to allocate', or 'Kelly criterion'.",
+        parameters: z.object({
+          symbol: z.string().describe("The stock ticker symbol (e.g. AAPL, MSFT)"),
+          accountSize: z
+            .number()
+            .optional()
+            .describe("Total portfolio value in dollars — used to compute dollar allocation"),
+          maxPosition: z
+            .number()
+            .optional()
+            .describe("Maximum position size as fraction (default 0.25 = 25%)"),
+        }),
+        execute: async ({ symbol, accountSize, maxPosition }) => {
+          try {
+            const result = await computeKellySize({
+              symbol: symbol.toUpperCase(),
+              accountSize,
+              maxPosition,
+            })
+            return result
+          } catch {
+            return { error: `Could not compute position size for ${symbol}` }
+          }
+        },
+      }),
+
+      getMarketRegime: tool({
+        description:
+          "Detect the current market regime (Risk-On, Risk-Off, Inflationary, or Transitional) using macro indicators. Returns regime classification, confidence level, individual indicator signals, and sector/factor implications. Use when users ask about market conditions, macro outlook, 'what regime are we in', or need context for allocation decisions.",
+        parameters: z.object({}),
+        execute: async () => {
+          try {
+            return await detectMarketRegime()
+          } catch {
+            return { error: "Failed to detect market regime" }
           }
         },
       }),
