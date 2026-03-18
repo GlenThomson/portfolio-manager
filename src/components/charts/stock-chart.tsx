@@ -451,10 +451,22 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
       })
     }
 
-    // ── Event markers (earnings, dividends, splits) ──
+    // ── Event markers series (pinned to bottom, near volume) ──
     let markersPlugin: ISeriesMarkersPluginApi<Time> | null = null
     if (indicators.find((i) => i.id === "events")?.active) {
-      markersPlugin = createSeriesMarkers(series["candle"], [])
+      series["events-anchor"] = mainChart.addSeries(LineSeries, {
+        color: "transparent",
+        lineWidth: 1,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        visible: false,
+        priceScaleId: "events",
+      })
+      mainChart.priceScale("events").applyOptions({
+        scaleMargins: { top: 0.85, bottom: 0 },
+        visible: false,
+      })
+      markersPlugin = createSeriesMarkers(series["events-anchor"], [])
     }
 
     // Store refs
@@ -574,17 +586,22 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
 
   // ── Effect: Update event markers on chart ─────────────────
   useEffect(() => {
-    const { markersPlugin } = chartsRef.current
-    if (!markersPlugin) return
+    const { markersPlugin, series } = chartsRef.current
+    const anchorSeries = series["events-anchor"]
+    if (!markersPlugin || !anchorSeries) return
 
     const showEvents = indicators.find((i) => i.id === "events")?.active ?? false
     if (!showEvents || events.length === 0) {
       markersPlugin.setMarkers([])
+      anchorSeries.setData([])
       return
     }
 
-    // Build marker set from chart data timestamps
-    const dataTimestamps = new Set(filterClean(data).map((d) => d.time))
+    const cleanData = filterClean(data)
+    if (cleanData.length === 0) return
+
+    const dataTimestamps = new Set(cleanData.map((d) => d.time))
+    const sortedTimes = cleanData.map((d) => d.time).sort((a, b) => a - b)
 
     const EVENT_COLORS: Record<string, string> = {
       earnings: "#ffab00",  // amber
@@ -598,17 +615,19 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
       split: "square",
     }
 
-    // Find closest chart timestamp for each event
-    const sortedTimes = filterClean(data).map((d) => d.time).sort((a, b) => a - b)
-
+    // Collect all timestamps needed for the anchor series (chart data + future events)
+    const allTimestamps = new Set(sortedTimes)
     const markers: SeriesMarker<Time>[] = []
 
     for (const event of events) {
       let matchTime = event.time
+      const isFuture = matchTime > sortedTimes[sortedTimes.length - 1]
 
-      // If exact match, use it; otherwise find closest
-      if (!dataTimestamps.has(matchTime)) {
-        // Find closest timestamp in chart data
+      if (isFuture) {
+        // Future event — add the timestamp directly to the anchor series
+        allTimestamps.add(matchTime)
+      } else if (!dataTimestamps.has(matchTime)) {
+        // Past event — snap to closest chart candle
         let closest = sortedTimes[0]
         let minDiff = Math.abs(matchTime - closest)
         for (const t of sortedTimes) {
@@ -618,24 +637,29 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
             closest = t
           }
         }
-        // Only match if within 5 days
-        if (minDiff > 5 * 86400) continue
+        if (minDiff > 5 * 86400) continue // skip if >5 days away
         matchTime = closest
       }
 
       markers.push({
         time: matchTime as Time,
-        position: "belowBar",
+        position: "aboveBar",
         shape: EVENT_SHAPES[event.type] ?? "circle",
-        color: EVENT_COLORS[event.type] ?? "#fff",
+        color: isFuture
+          ? EVENT_COLORS[event.type] + "99" // slightly transparent for future
+          : EVENT_COLORS[event.type] ?? "#fff",
         text: event.label,
       })
     }
 
-    // Sort markers by time (required by lightweight-charts)
-    markers.sort((a, b) => (a.time as number) - (b.time as number))
+    // Set anchor series data (invisible line at bottom, extends to future events)
+    const anchorData = Array.from(allTimestamps)
+      .sort((a, b) => a - b)
+      .map((t) => ({ time: t as Time, value: 0 }))
+    anchorSeries.setData(anchorData)
 
-    // Deduplicate by time (keep first of each time)
+    // Sort and deduplicate markers by time
+    markers.sort((a, b) => (a.time as number) - (b.time as number))
     const seen = new Set<number>()
     const dedupedMarkers = markers.filter((m) => {
       const t = m.time as number
