@@ -31,6 +31,8 @@ import {
 } from "@/lib/market/scanner"
 import { getWSBTrending, getStockMentions, getStockSentiment } from "@/lib/market/reddit"
 import { getStockScore } from "@/lib/scoring"
+import { getMacroSnapshot, isFredConfigured, getFredSeries, FRED_SERIES } from "@/lib/market/fred"
+import { getPutCallSnapshot } from "@/lib/market/cboe"
 import { db } from "@/lib/db"
 import {
   portfolios,
@@ -973,6 +975,58 @@ After gathering all data, synthesize into the structured Research Report format 
             return score
           } catch {
             return { error: `Could not compute score for ${symbol}` }
+          }
+        },
+      }),
+
+      getMacroIndicators: tool({
+        description:
+          "Get macroeconomic indicators including yield curve, VIX, Fed funds rate, unemployment, CPI, consumer sentiment, Treasury yields, and put/call ratios. Use this when users ask about macro conditions, the economy, interest rates, market fear/greed, or want context for investment decisions.",
+        parameters: z.object({
+          type: z
+            .enum(["snapshot", "series", "putcall"])
+            .optional()
+            .describe("Type of data: 'snapshot' for all indicators (default), 'series' for a specific FRED series, 'putcall' for options put/call ratios"),
+          seriesId: z
+            .string()
+            .optional()
+            .describe("FRED series ID when type='series'. Options: T10Y2Y (yield curve spread), DGS10 (10Y Treasury), DGS2 (2Y Treasury), DFF (Fed funds rate), VIXCLS (VIX), CPIAUCSL (CPI), UNRATE (unemployment), ICSA (initial claims), UMCSENT (consumer sentiment)"),
+          limit: z
+            .number()
+            .optional()
+            .describe("Number of observations for series data (default 30, max 500)"),
+        }),
+        execute: async ({ type = "snapshot", seriesId, limit = 30 }) => {
+          try {
+            if (type === "series" && seriesId) {
+              if (!isFredConfigured()) {
+                return { error: "FRED API key not configured. Macro series data unavailable." }
+              }
+              const data = await getFredSeries(seriesId, Math.min(limit, 500))
+              return data
+            }
+
+            if (type === "putcall") {
+              const data = await getPutCallSnapshot()
+              return data
+            }
+
+            // Full snapshot
+            const [macroData, putCallData] = await Promise.allSettled([
+              getMacroSnapshot(),
+              getPutCallSnapshot(),
+            ])
+
+            const snapshot = {
+              fredConfigured: isFredConfigured(),
+              fred: macroData.status === "fulfilled" ? macroData.value : null,
+              putCall: putCallData.status === "fulfilled" ? putCallData.value : null,
+              availableSeries: Object.entries(FRED_SERIES).map(([id, title]) => ({ id, title })),
+            }
+
+            return snapshot
+          } catch {
+            return { error: "Failed to fetch macro indicators" }
           }
         },
       }),
