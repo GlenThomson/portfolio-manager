@@ -64,11 +64,15 @@ function extractSections(text: string): FilingSection[] {
     {
       name: "Risk Factors (Item 1A)",
       startPatterns: [
+        // All-caps first (actual section header, skips TOC which uses mixed case)
+        /ITEM\s+1A[\s.:\-–—]+RISK\s+FACTORS/,
         /item\s+1a[\s.:\-–—]+risk\s+factors/i,
         /item\s+1a\b/i,
       ],
       endPatterns: [
+        /ITEM\s+1B[\s.:\-–—]/,
         /item\s+1b[\s.:\-–—]/i,
+        /ITEM\s+2[\s.:\-–—]/,
         /item\s+2[\s.:\-–—]/i,
         /unresolved\s+staff\s+comments/i,
       ],
@@ -76,12 +80,16 @@ function extractSections(text: string): FilingSection[] {
     {
       name: "MD&A (Item 7)",
       startPatterns: [
-        /item\s+7[\s.:\-–—]+management['']?s?\s+discussion/i,
+        // All-caps first; .? handles stripped curly apostrophe (&#8217; → empty)
+        /ITEM\s+7[\s.:\-–—]+MANAGEMENT.?S\s+DISCUSSION/,
+        /item\s+7[\s.:\-–—]+management.?s\s+discussion/i,
         /item\s+7[\s.:\-–—]/i,
-        /management['']?s?\s+discussion\s+and\s+analysis/i,
+        /management.?s\s+discussion\s+and\s+analysis/i,
       ],
       endPatterns: [
+        /ITEM\s+7A[\s.:\-–—]/,
         /item\s+7a[\s.:\-–—]/i,
+        /ITEM\s+8[\s.:\-–—]/,
         /item\s+8[\s.:\-–—]/i,
         /quantitative\s+and\s+qualitative\s+disclosures/i,
       ],
@@ -89,10 +97,12 @@ function extractSections(text: string): FilingSection[] {
     {
       name: "Business (Item 1)",
       startPatterns: [
+        /ITEM\s+1[\s.:\-–—]+BUSINESS\b/,
         /item\s+1[\s.:\-–—]+business\b/i,
         /item\s+1[\s.:\-–—](?![\da])/i,
       ],
       endPatterns: [
+        /ITEM\s+1A[\s.:\-–—]/,
         /item\s+1a[\s.:\-–—]/i,
         /item\s+1b[\s.:\-–—]/i,
         /risk\s+factors/i,
@@ -103,7 +113,7 @@ function extractSections(text: string): FilingSection[] {
   for (const pattern of sectionPatterns) {
     let startIdx = -1
 
-    // Find section start
+    // Find section start — prefer all-caps match (actual section body, not TOC)
     for (const re of pattern.startPatterns) {
       const match = text.match(re)
       if (match && match.index != null) {
@@ -156,10 +166,13 @@ function extractQuarterlySections(text: string): FilingSection[] {
     {
       name: "Risk Factors",
       startPatterns: [
+        /PART\s+II.*ITEM\s+1A[\s.:\-–—]+RISK\s+FACTORS/,
+        /ITEM\s+1A[\s.:\-–—]+RISK\s+FACTORS/,
         /part\s+ii.*item\s+1a[\s.:\-–—]+risk\s+factors/i,
         /item\s+1a[\s.:\-–—]+risk\s+factors/i,
       ],
       endPatterns: [
+        /ITEM\s+2[\s.:\-–—]/,
         /item\s+2[\s.:\-–—]/i,
         /item\s+1b[\s.:\-–—]/i,
         /unregistered\s+sales/i,
@@ -168,10 +181,12 @@ function extractQuarterlySections(text: string): FilingSection[] {
     {
       name: "MD&A",
       startPatterns: [
-        /item\s+2[\s.:\-–—]+management['']?s?\s+discussion/i,
-        /management['']?s?\s+discussion\s+and\s+analysis/i,
+        /ITEM\s+2[\s.:\-–—]+MANAGEMENT.?S\s+DISCUSSION/,
+        /item\s+2[\s.:\-–—]+management.?s\s+discussion/i,
+        /management.?s\s+discussion\s+and\s+analysis/i,
       ],
       endPatterns: [
+        /ITEM\s+3[\s.:\-–—]/,
         /item\s+3[\s.:\-–—]/i,
         /quantitative\s+and\s+qualitative/i,
       ],
