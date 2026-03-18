@@ -54,6 +54,8 @@ When users ask about SEC filings, annual reports, or want deeper fundamental ana
 
 When users ask to compare filings, check for risk changes, or analyze how a company's disclosures have evolved, use a two-step process:
 
+When users say "earnings reports", "annual reports", "quarterly reports", or "10-K/10-Q comparison", they want the SEC filing comparison — use compareFilings, NOT getEarnings. The getEarnings tool is for EPS numbers only.
+
 **Step 1**: Call compareFilings — this quickly finds the two most recent filings and returns their metadata. Tell the user you found the filings.
 **Step 2**: Call extractFilingSections for the CURRENT filing. Tell the user you're downloading it. Then call extractFilingSections for the PRIOR filing. Tell the user you're downloading the second one.
 **Step 3**: Compare the extracted sections and provide your analysis.
