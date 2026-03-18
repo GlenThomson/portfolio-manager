@@ -3,11 +3,14 @@
 import { useEffect, useRef, useState, useCallback } from "react"
 import {
   createChart,
+  createSeriesMarkers,
   type IChartApi,
   type ISeriesApi,
+  type ISeriesMarkersPluginApi,
   ColorType,
   type CandlestickData,
   type HistogramData,
+  type SeriesMarker,
   type Time,
   CrosshairMode,
   CandlestickSeries,
@@ -49,6 +52,7 @@ interface Indicator {
 
 const DEFAULT_INDICATORS: Indicator[] = [
   { id: "vol", label: "Vol", active: true, overlay: true },
+  { id: "events", label: "Events (E/D/S)", active: true, overlay: true },
   { id: "sma20", label: "SMA 20", active: false, overlay: true },
   { id: "sma50", label: "SMA 50", active: true, overlay: true },
   { id: "sma200", label: "SMA 200", active: false, overlay: true },
@@ -78,6 +82,13 @@ interface ChartAlert {
   condition: string
 }
 
+export interface ChartEvent {
+  time: number
+  type: "earnings" | "dividend" | "split"
+  label: string
+  detail: string
+}
+
 interface StockChartProps {
   symbol: string
   data: OHLC[]
@@ -89,6 +100,7 @@ interface StockChartProps {
   onRemoveAlert?: (alertId: string) => void
   onMoveAlert?: (alertId: string, newPrice: number) => void
   alerts?: ChartAlert[]
+  events?: ChartEvent[]
 }
 
 interface OHLCLegend {
@@ -122,7 +134,7 @@ function filterClean(data: OHLC[]): OHLC[] {
 
 // ── Component ────────────────────────────────────────────
 
-export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoadMore, onCreateAlert, onRemoveAlert, onMoveAlert, alerts = [] }: StockChartProps) {
+export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoadMore, onCreateAlert, onRemoveAlert, onMoveAlert, alerts = [], events = [] }: StockChartProps) {
   const mainChartRef = useRef<HTMLDivElement>(null)
   const rsiChartRef = useRef<HTMLDivElement>(null)
   const macdChartRef = useRef<HTMLDivElement>(null)
@@ -157,6 +169,7 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
     macd: IChartApi | null
     series: Record<string, ISeriesApi<any>>
     alertLines?: any[]
+    markersPlugin?: ISeriesMarkersPluginApi<Time> | null
   }>({ main: null, rsi: null, macd: null, series: {} })
 
   // Track last dataset endpoint to detect fresh load vs prepend
@@ -438,8 +451,14 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
       })
     }
 
+    // ── Event markers (earnings, dividends, splits) ──
+    let markersPlugin: ISeriesMarkersPluginApi<Time> | null = null
+    if (indicators.find((i) => i.id === "events")?.active) {
+      markersPlugin = createSeriesMarkers(series["candle"], [])
+    }
+
     // Store refs
-    chartsRef.current = { main: mainChart, rsi: rsiChart ?? null, macd: macdChart ?? null, series }
+    chartsRef.current = { main: mainChart, rsi: rsiChart ?? null, macd: macdChart ?? null, series, markersPlugin }
 
     // Populate data from ref (covers indicator toggle when data already loaded)
     populateAllSeries()
@@ -552,6 +571,81 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
       chartsRef.current = { main: null, rsi: null, macd: null, series: {} }
     }
   }, [indicators, showRSI, showMACD, logScale, populateAllSeries])
+
+  // ── Effect: Update event markers on chart ─────────────────
+  useEffect(() => {
+    const { markersPlugin } = chartsRef.current
+    if (!markersPlugin) return
+
+    const showEvents = indicators.find((i) => i.id === "events")?.active ?? false
+    if (!showEvents || events.length === 0) {
+      markersPlugin.setMarkers([])
+      return
+    }
+
+    // Build marker set from chart data timestamps
+    const dataTimestamps = new Set(filterClean(data).map((d) => d.time))
+
+    const EVENT_COLORS: Record<string, string> = {
+      earnings: "#ffab00",  // amber
+      dividend: "#00e676",  // green
+      split: "#448aff",     // blue
+    }
+
+    const EVENT_SHAPES: Record<string, "circle" | "square" | "arrowUp" | "arrowDown"> = {
+      earnings: "circle",
+      dividend: "arrowUp",
+      split: "square",
+    }
+
+    // Find closest chart timestamp for each event
+    const sortedTimes = filterClean(data).map((d) => d.time).sort((a, b) => a - b)
+
+    const markers: SeriesMarker<Time>[] = []
+
+    for (const event of events) {
+      let matchTime = event.time
+
+      // If exact match, use it; otherwise find closest
+      if (!dataTimestamps.has(matchTime)) {
+        // Find closest timestamp in chart data
+        let closest = sortedTimes[0]
+        let minDiff = Math.abs(matchTime - closest)
+        for (const t of sortedTimes) {
+          const diff = Math.abs(matchTime - t)
+          if (diff < minDiff) {
+            minDiff = diff
+            closest = t
+          }
+        }
+        // Only match if within 5 days
+        if (minDiff > 5 * 86400) continue
+        matchTime = closest
+      }
+
+      markers.push({
+        time: matchTime as Time,
+        position: "belowBar",
+        shape: EVENT_SHAPES[event.type] ?? "circle",
+        color: EVENT_COLORS[event.type] ?? "#fff",
+        text: event.label,
+      })
+    }
+
+    // Sort markers by time (required by lightweight-charts)
+    markers.sort((a, b) => (a.time as number) - (b.time as number))
+
+    // Deduplicate by time (keep first of each time)
+    const seen = new Set<number>()
+    const dedupedMarkers = markers.filter((m) => {
+      const t = m.time as number
+      if (seen.has(t)) return false
+      seen.add(t)
+      return true
+    })
+
+    markersPlugin.setMarkers(dedupedMarkers)
+  }, [events, data, indicators])
 
   // ── Effect: Draw alert lines on chart ────────────────────
   useEffect(() => {

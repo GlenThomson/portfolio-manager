@@ -19,6 +19,7 @@ import { createClient } from "@/lib/supabase/client"
 import { getCurrentUserId } from "@/lib/supabase/user"
 import { cn } from "@/lib/utils"
 import type { Quote, OHLC } from "@/types/market"
+import type { ChartEvent } from "@/components/charts/stock-chart"
 import { useCurrency } from "@/hooks/useCurrency"
 
 function formatNum(n: number) {
@@ -46,6 +47,7 @@ export default function StockDetailPage() {
   const [inWatchlist, setInWatchlist] = useState(false)
   const [watchlistLoading, setWatchlistLoading] = useState(false)
   const [alerts, setAlerts] = useState<Array<{ id: string; price: number; condition: string }>>([])
+  const [chartEvents, setChartEvents] = useState<ChartEvent[]>([])
   const loadingMoreRef = useRef(false)
 
   const handleLoadMore = useCallback(async (beforeTimestamp: number) => {
@@ -157,6 +159,14 @@ export default function StockDetailPage() {
     const supabase = createClient()
     supabase.from("watchlists").select("symbols").limit(1).single()
       .then(({ data }) => { if (data?.symbols?.includes(symbol)) setInWatchlist(true) })
+  }, [symbol])
+
+  // Fetch chart events (earnings, dividends, splits)
+  useEffect(() => {
+    fetch(`/api/market/chart-events?symbol=${symbol}`)
+      .then((r) => r.ok ? r.json() : [])
+      .then((events: ChartEvent[]) => setChartEvents(events))
+      .catch(() => {})
   }, [symbol])
 
   async function toggleWatchlist() {
@@ -305,6 +315,7 @@ export default function StockDetailPage() {
           onRemoveAlert={handleRemoveAlert}
           onMoveAlert={handleMoveAlert}
           alerts={alerts}
+          events={chartEvents}
         />
       )}
 
