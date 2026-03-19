@@ -121,6 +121,38 @@ export async function getNews(symbol: string) {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function getOptions(symbol: string, expirationDate?: number) {
+  const opts: any = {}
+  if (expirationDate) opts.date = new Date(expirationDate * 1000)
+  const result: any = await yahooFinance.options(symbol, opts)
+
+  const mapContract = (c: any) => ({
+    contractSymbol: c.contractSymbol ?? "",
+    strike: c.strike ?? 0,
+    lastPrice: c.lastPrice ?? 0,
+    bid: c.bid ?? 0,
+    ask: c.ask ?? 0,
+    change: c.change ?? 0,
+    percentChange: c.percentChange ?? 0,
+    volume: c.volume ?? 0,
+    openInterest: c.openInterest ?? 0,
+    impliedVolatility: c.impliedVolatility ?? 0,
+    inTheMoney: c.inTheMoney ?? false,
+    expiration: c.expiration ? Math.floor(new Date(c.expiration).getTime() / 1000) : 0,
+  })
+
+  return {
+    underlyingPrice: result.quote?.regularMarketPrice ?? 0,
+    expirationDates: (result.expirationDates ?? []).map(
+      (d: Date) => Math.floor(new Date(d).getTime() / 1000)
+    ),
+    strikes: result.strikes ?? [],
+    calls: (result.options?.[0]?.calls ?? []).map(mapContract),
+    puts: (result.options?.[0]?.puts ?? []).map(mapContract),
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function searchSymbols(query: string) {
   const result: any = await yahooFinance.search(query, { quotesCount: 8 })
   return (result.quotes ?? [])

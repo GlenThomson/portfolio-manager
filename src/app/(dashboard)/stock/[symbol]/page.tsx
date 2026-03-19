@@ -13,6 +13,7 @@ import { SecFilings } from "@/components/market/sec-filings"
 import { RedditSentiment } from "@/components/market/reddit-sentiment"
 import { StockScore } from "@/components/market/stock-score"
 import { StockNews } from "@/components/market/stock-news"
+import { OptionsChain } from "@/components/market/options-chain"
 import { Button } from "@/components/ui/button"
 import { Star, Plus, Loader2 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
@@ -48,6 +49,7 @@ export default function StockDetailPage() {
   const [watchlistLoading, setWatchlistLoading] = useState(false)
   const [alerts, setAlerts] = useState<Array<{ id: string; price: number; condition: string }>>([])
   const [chartEvents, setChartEvents] = useState<ChartEvent[]>([])
+  const [activeTab, setActiveTab] = useState<"overview" | "options" | "news" | "filings">("overview")
   const loadingMoreRef = useRef(false)
 
   const handleLoadMore = useCallback(async (beforeTimestamp: number) => {
@@ -340,20 +342,49 @@ export default function StockDetailPage() {
         </div>
       )}
 
-      {/* ── AI Score ──────────────────────────────────────── */}
-      <StockScore symbol={symbol} />
+      {/* ── Tab bar ──────────────────────────────────────── */}
+      <div className="flex gap-0.5 rounded-md p-1" style={{ background: "#131722" }}>
+        {([
+          { key: "overview" as const, label: "Overview" },
+          { key: "options" as const, label: "Options" },
+          { key: "news" as const, label: "News" },
+          { key: "filings" as const, label: "Filings" },
+        ]).map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => setActiveTab(key)}
+            className={cn(
+              "px-4 py-2 text-sm font-medium rounded transition-colors",
+              activeTab === key
+                ? "bg-[#2a2e39] text-[#d1d4dc]"
+                : "text-[#787b86] hover:text-[#d1d4dc] hover:bg-[#1e222d]"
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
-      {/* ── Fundamentals Grid ──────────────────────────────── */}
-      <FundamentalsGrid symbol={symbol} />
+      {/* ── Tab content ──────────────────────────────────── */}
+      {activeTab === "overview" && (
+        <div className="space-y-4">
+          <StockScore symbol={symbol} />
+          <FundamentalsGrid symbol={symbol} />
+          <RedditSentiment symbol={symbol} />
+        </div>
+      )}
 
-      {/* ── SEC Filings ──────────────────────────────────────── */}
-      <SecFilings symbol={symbol} />
+      {activeTab === "options" && (
+        <OptionsChain symbol={symbol} underlyingPrice={quote?.regularMarketPrice} />
+      )}
 
-      {/* ── Reddit Sentiment ──────────────────────────────── */}
-      <RedditSentiment symbol={symbol} />
+      {activeTab === "news" && (
+        <StockNews symbol={symbol} />
+      )}
 
-      {/* ── News Section ───────────────────────────────────── */}
-      <StockNews symbol={symbol} />
+      {activeTab === "filings" && (
+        <SecFilings symbol={symbol} />
+      )}
     </div>
   )
 }
