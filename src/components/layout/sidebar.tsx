@@ -14,6 +14,7 @@ import {
   Settings,
   TrendingUp,
   DollarSign,
+  MessageCircleWarning,
 } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
@@ -30,6 +31,7 @@ const navItems = [
 
 const secondaryItems = [
   { label: "Alerts", href: "/alerts", icon: Bell },
+  { label: "Feedback", href: "/feedback", icon: MessageCircleWarning },
   { label: "Settings", href: "/settings", icon: Settings },
 ]
 
