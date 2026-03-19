@@ -88,7 +88,7 @@ export async function GET() {
           Authorization: `Bearer ${GITHUB_TOKEN}`,
           Accept: "application/vnd.github+json",
         },
-        next: { revalidate: 60 },
+        next: { revalidate: 0 },
       }
     )
 
@@ -109,7 +109,7 @@ export async function GET() {
     }))
 
     return NextResponse.json(mapped, {
-      headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=120" },
+      headers: { "Cache-Control": "no-cache" },
     })
   } catch {
     return NextResponse.json([])

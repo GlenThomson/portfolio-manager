@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
-import { Bug, Lightbulb, Send, Loader2, Check, ExternalLink, MessageSquare } from "lucide-react"
+import { Bug, Lightbulb, Send, Loader2, Check, MessageSquare } from "lucide-react"
 
 // ── Types ───────────────────────────────────────────────────
 
@@ -18,7 +18,6 @@ interface Issue {
   state: string
   labels: string[]
   createdAt: string
-  url: string
   comments: number
 }
 
@@ -185,20 +184,7 @@ export default function FeedbackPage() {
               {/* Success message */}
               {submitted && (
                 <div className="text-sm text-green-500 bg-green-500/10 rounded-md p-3">
-                  Feedback submitted successfully!
-                  {submitted.issueUrl && (
-                    <>
-                      {" "}
-                      <a
-                        href={submitted.issueUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="underline inline-flex items-center gap-1"
-                      >
-                        View issue #{submitted.issueNumber} <ExternalLink className="h-3 w-3" />
-                      </a>
-                    </>
-                  )}
+                  Feedback submitted successfully! We&apos;ll look into it.
                 </div>
               )}
 
@@ -279,15 +265,9 @@ function IssueRow({ issue }: { issue: Issue }) {
   })
 
   return (
-    <a
-      href={issue.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="flex items-start gap-3 p-2 rounded-md hover:bg-accent transition-colors group"
-    >
-      <span className="text-xs text-muted-foreground mt-0.5 shrink-0">#{issue.number}</span>
+    <div className="flex items-start gap-3 p-2 rounded-md">
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium truncate group-hover:text-primary transition-colors">
+        <p className="text-sm font-medium truncate">
           {title}
         </p>
         <div className="flex items-center gap-2 mt-0.5">
@@ -299,7 +279,6 @@ function IssueRow({ issue }: { issue: Issue }) {
           )}
         </div>
       </div>
-      <ExternalLink className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity mt-1 shrink-0" />
-    </a>
+    </div>
   )
 }
