@@ -121,9 +121,11 @@ function FearGreedSection({
   // History chart
   const history = data.history ?? []
   const chartW = 400
-  const chartH = 100
-  const chartPad = 4
+  const chartH = 140
+  const chartPad = 6
+  const rightPad = 28 // space for Y-axis labels
   const innerH = chartH - chartPad * 2
+  const innerW = chartW - chartPad - rightPad
 
   let historyPath = ""
   let historyAreaPath = ""
@@ -133,12 +135,12 @@ function FearGreedSection({
     const dateRange = maxDate - minDate || 1
 
     const points = history.map((p) => ({
-      x: chartPad + ((p.date - minDate) / dateRange) * (chartW - chartPad * 2),
+      x: chartPad + ((p.date - minDate) / dateRange) * innerW,
       y: chartPad + (1 - p.score / 100) * innerH,
     }))
 
     historyPath = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ")
-    historyAreaPath = historyPath + ` L ${points[points.length - 1].x} ${chartH} L ${points[0].x} ${chartH} Z`
+    historyAreaPath = historyPath + ` L ${points[points.length - 1].x} ${chartH - chartPad} L ${points[0].x} ${chartH - chartPad} Z`
   }
 
   const formatDate = (ts: number) =>
@@ -237,7 +239,7 @@ function FearGreedSection({
                 </div>
               </div>
               <div className="w-full">
-                <svg viewBox={`0 0 ${chartW} ${chartH}`} className="w-full" preserveAspectRatio="none" style={{ height: "140px" }}>
+                <svg viewBox={`0 0 ${chartW} ${chartH}`} className="w-full" preserveAspectRatio="none" style={{ height: "180px" }}>
                   {/* Zone bands */}
                   {[
                     { from: 75, to: 100, color: "#16c784" },
@@ -250,7 +252,7 @@ function FearGreedSection({
                       key={band.from}
                       x="0"
                       y={chartPad + (1 - band.to / 100) * innerH}
-                      width={chartW}
+                      width={chartW - rightPad}
                       height={((band.to - band.from) / 100) * innerH}
                       fill={band.color}
                       opacity="0.06"
@@ -260,7 +262,7 @@ function FearGreedSection({
                   {[25, 50, 75].map((v) => (
                     <line
                       key={v}
-                      x1="0" x2={chartW}
+                      x1="0" x2={chartW - rightPad}
                       y1={chartPad + (1 - v / 100) * innerH}
                       y2={chartPad + (1 - v / 100) * innerH}
                       stroke="#787b86" strokeWidth="0.5" strokeDasharray="4 3" opacity="0.3"
@@ -270,20 +272,19 @@ function FearGreedSection({
                   {[0, 25, 50, 75, 100].map((v) => (
                     <text
                       key={v}
-                      x={chartW - 2}
+                      x={chartW - rightPad + 6}
                       y={chartPad + (1 - v / 100) * innerH + 3}
-                      fontSize="7"
-                      fill="#787b86"
-                      textAnchor="end"
-                      opacity="0.6"
+                      fontSize="8"
+                      fill="#9ca3af"
+                      textAnchor="start"
                     >
                       {v}
                     </text>
                   ))}
                   {/* Area fill */}
-                  <path d={historyAreaPath} fill="url(#fgGrad)" opacity="0.25" />
+                  <path d={historyAreaPath} fill="url(#fgGrad)" opacity="0.2" />
                   {/* Line */}
-                  <path d={historyPath} fill="none" stroke={color} strokeWidth="1.5" />
+                  <path d={historyPath} fill="none" stroke={color} strokeWidth="1" />
                   <defs>
                     <linearGradient id="fgGrad" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor={color} stopOpacity="0.5" />
