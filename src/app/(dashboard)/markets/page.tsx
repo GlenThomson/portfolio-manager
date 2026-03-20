@@ -123,8 +123,9 @@ function FearGreedSection({
   const chartW = 400
   const chartH = 140
   const chartPad = 6
+  const rightPad = 28 // space for Y-axis labels
   const innerH = chartH - chartPad * 2
-  const innerW = chartW - chartPad * 2
+  const innerW = chartW - chartPad - rightPad
 
   let historyPath = ""
   let historyAreaPath = ""
@@ -148,7 +149,7 @@ function FearGreedSection({
   return (
     <Card>
       <CardContent className="pt-6">
-        <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6 items-start">
+        <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] gap-6 items-start">
           {/* Left: Gauge */}
           <div className="flex flex-col items-center">
             <div className="w-56 h-32">
@@ -237,9 +238,8 @@ function FearGreedSection({
                   ))}
                 </div>
               </div>
-              <div className="w-full relative" style={{ height: "220px" }}>
-                {/* Chart SVG — stretched to fill, no text inside */}
-                <svg viewBox={`0 0 ${chartW} ${chartH}`} preserveAspectRatio="none" className="absolute inset-0" style={{ width: "calc(100% - 28px)", height: "100%" }}>
+              <div className="w-full">
+                <svg viewBox={`0 0 ${chartW} ${chartH}`} className="w-full" preserveAspectRatio="none" style={{ height: "180px" }}>
                   {/* Zone bands */}
                   {[
                     { from: 75, to: 100, color: "#16c784" },
@@ -252,7 +252,7 @@ function FearGreedSection({
                       key={band.from}
                       x="0"
                       y={chartPad + (1 - band.to / 100) * innerH}
-                      width={chartW}
+                      width={chartW - rightPad}
                       height={((band.to - band.from) / 100) * innerH}
                       fill={band.color}
                       opacity="0.06"
@@ -262,11 +262,24 @@ function FearGreedSection({
                   {[25, 50, 75].map((v) => (
                     <line
                       key={v}
-                      x1="0" x2={chartW}
+                      x1="0" x2={chartW - rightPad}
                       y1={chartPad + (1 - v / 100) * innerH}
                       y2={chartPad + (1 - v / 100) * innerH}
                       stroke="#787b86" strokeWidth="0.5" strokeDasharray="4 3" opacity="0.3"
                     />
+                  ))}
+                  {/* Y-axis labels */}
+                  {[0, 25, 50, 75, 100].map((v) => (
+                    <text
+                      key={v}
+                      x={chartW - rightPad + 6}
+                      y={chartPad + (1 - v / 100) * innerH + 3}
+                      fontSize="8"
+                      fill="#9ca3af"
+                      textAnchor="start"
+                    >
+                      {v}
+                    </text>
                   ))}
                   {/* Area fill */}
                   <path d={historyAreaPath} fill="url(#fgGrad)" opacity="0.2" />
@@ -279,18 +292,10 @@ function FearGreedSection({
                     </linearGradient>
                   </defs>
                 </svg>
-                {/* Y-axis labels as HTML so they don't stretch */}
-                <div className="absolute top-0 right-0 h-full flex flex-col justify-between py-1" style={{ width: "28px" }}>
-                  {[100, 75, 50, 25, 0].map((v) => (
-                    <span key={v} className="text-[11px] text-muted-foreground leading-none text-right pr-1">
-                      {v}
-                    </span>
-                  ))}
+                <div className="flex justify-between text-[10px] text-muted-foreground mt-1 px-1">
+                  <span>{formatDate(history[0].date)}</span>
+                  <span>{formatDate(history[history.length - 1].date)}</span>
                 </div>
-              </div>
-              <div className="flex justify-between text-[10px] text-muted-foreground mt-1 px-1">
-                <span>{formatDate(history[0].date)}</span>
-                <span>{formatDate(history[history.length - 1].date)}</span>
               </div>
             </div>
           )}
