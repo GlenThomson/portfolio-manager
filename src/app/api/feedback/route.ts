@@ -19,6 +19,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Title and type are required" }, { status: 400 })
     }
 
+    if (title.length > 500 || (description && description.length > 5000)) {
+      return NextResponse.json({ error: "Title or description too long" }, { status: 400 })
+    }
+
     const label = type === "bug" ? "bug" : "enhancement"
     const emoji = type === "bug" ? "🐛" : "✨"
 
@@ -66,7 +70,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Fallback: no GitHub token configured
-    console.log("Feedback received (no GITHUB_TOKEN):", { type, title, description })
+    console.log("Feedback received (no GITHUB_TOKEN):", { type })
     return NextResponse.json({ success: true, issueNumber: null, issueUrl: null })
   } catch (error) {
     console.error("Feedback error:", error)

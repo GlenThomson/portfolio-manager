@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getFilings, getFilingDocument } from "@/lib/market/edgar"
+import { isValidSymbol } from "@/lib/validation"
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
@@ -21,7 +22,7 @@ export async function GET(request: NextRequest) {
   }
 
   // Mode 2: List recent filings for a symbol
-  if (!symbol) {
+  if (!isValidSymbol(symbol)) {
     return NextResponse.json(
       { error: "symbol parameter required (or accession + document for filing content)" },
       { status: 400 }

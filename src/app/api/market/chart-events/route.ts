@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { isValidSymbol } from "@/lib/validation"
 import YahooFinance from "yahoo-finance2"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -17,7 +18,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const symbol = searchParams.get("symbol")
 
-  if (!symbol) {
+  if (!isValidSymbol(symbol)) {
     return NextResponse.json({ error: "symbol is required" }, { status: 400 })
   }
 

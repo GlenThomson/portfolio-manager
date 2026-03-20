@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getChart } from "@/lib/market/yahoo"
+import { isValidSymbol } from "@/lib/validation"
 
 // Simple in-memory cache to avoid redundant Yahoo API calls
 const cache = new Map<string, { data: unknown; ts: number }>()
@@ -19,7 +20,7 @@ export async function GET(request: NextRequest) {
   const interval = searchParams.get("interval") ?? "1d"
   const before = searchParams.get("before") // Unix timestamp — fetch data ending before this date
 
-  if (!symbol) {
+  if (!isValidSymbol(symbol)) {
     return NextResponse.json({ error: "symbol parameter required" }, { status: 400 })
   }
 

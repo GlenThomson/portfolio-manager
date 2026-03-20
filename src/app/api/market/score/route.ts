@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getStockScore } from "@/lib/scoring"
+import { isValidSymbol } from "@/lib/validation"
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const symbol = searchParams.get("symbol")
 
-  if (!symbol) {
+  if (!isValidSymbol(symbol)) {
     return NextResponse.json(
       { error: "symbol parameter required" },
       { status: 400 },

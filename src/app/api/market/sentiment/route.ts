@@ -4,6 +4,7 @@ import {
   getStockMentions,
   getStockSentiment,
 } from "@/lib/market/reddit"
+import { isValidSymbol } from "@/lib/validation"
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -15,6 +16,9 @@ export async function GET(req: NextRequest) {
 
     // Single stock sentiment
     if (symbol) {
+      if (!isValidSymbol(symbol)) {
+        return NextResponse.json({ error: "Invalid symbol format" }, { status: 400 })
+      }
       const sentiment = await getStockSentiment(symbol)
       return NextResponse.json(sentiment, { headers: cacheHeaders })
     }

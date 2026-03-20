@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { exchangeCode } from "@/lib/brokers/ibkr"
-import { createClient } from "@/lib/supabase/server"
+import { createClient, getServerUserId } from "@/lib/supabase/server"
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
@@ -16,6 +16,18 @@ export async function GET(request: NextRequest) {
     stateData = JSON.parse(Buffer.from(state, "base64url").toString())
   } catch {
     return NextResponse.json({ error: "Invalid state" }, { status: 400 })
+  }
+
+  // Verify the state userId matches the authenticated user
+  let currentUserId: string
+  try {
+    currentUserId = await getServerUserId()
+  } catch {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  if (stateData.userId !== currentUserId) {
+    return NextResponse.json({ error: "State mismatch" }, { status: 403 })
   }
 
   try {

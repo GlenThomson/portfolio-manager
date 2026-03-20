@@ -4,6 +4,7 @@ import {
   getEarningsCalendar,
   isFinnhubConfigured,
 } from "@/lib/market/finnhub"
+import { isValidSymbol } from "@/lib/validation"
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -21,6 +22,9 @@ export async function GET(req: NextRequest) {
   try {
     // If symbol is provided, return earnings history for that stock
     if (symbol) {
+      if (!isValidSymbol(symbol)) {
+        return NextResponse.json({ error: "Invalid symbol format" }, { status: 400 })
+      }
       const earnings = await getEarnings(symbol.toUpperCase())
       return NextResponse.json({ symbol: symbol.toUpperCase(), earnings })
     }
