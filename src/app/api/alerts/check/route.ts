@@ -113,7 +113,7 @@ export async function GET() {
                 conditionValue: targetValue,
                 currentPrice,
               })
-              console.log(`Alert email to ${user.email}: ${result ? "sent" : "failed"}`)
+              console.log(`Alert email for ${alert.symbol}: ${result ? "sent" : "failed"}`)
             } else {
               console.log(`Alert triggered for ${alert.symbol} but email alerts not enabled in settings`)
             }

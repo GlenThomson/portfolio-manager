@@ -20,6 +20,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "file required" }, { status: 400 })
   }
 
+  const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
+  if (file.size > MAX_FILE_SIZE) {
+    return NextResponse.json({ error: "File too large (max 10 MB)" }, { status: 413 })
+  }
+
   const csvText = await file.text()
 
   // Step 1: No mapping provided → return headers + preview for the UI

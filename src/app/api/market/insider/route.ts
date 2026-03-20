@@ -3,12 +3,13 @@ import {
   getInsiderTransactions,
   isFinnhubConfigured,
 } from "@/lib/market/finnhub"
+import { isValidSymbol } from "@/lib/validation"
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const symbol = searchParams.get("symbol")
 
-  if (!symbol) {
+  if (!isValidSymbol(symbol)) {
     return NextResponse.json(
       { error: "symbol parameter is required" },
       { status: 400 }

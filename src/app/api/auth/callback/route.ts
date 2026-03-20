@@ -2,10 +2,19 @@ import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
 
+function isValidRedirectPath(path: string): boolean {
+  // Must start with / and must not start with // (protocol-relative URL)
+  if (!path.startsWith("/") || path.startsWith("//")) return false
+  // Block backslash-based bypasses (e.g. /\attacker.com)
+  if (path.includes("\\")) return false
+  return true
+}
+
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get("code")
-  const next = searchParams.get("next") ?? searchParams.get("redirectTo") ?? "/"
+  const rawNext = searchParams.get("next") ?? searchParams.get("redirectTo") ?? "/"
+  const next = isValidRedirectPath(rawNext) ? rawNext : "/"
 
   if (code) {
     const cookieStore = cookies()

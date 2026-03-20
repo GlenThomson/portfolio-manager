@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { isValidSymbol } from "@/lib/validation"
 import { getNews as getYahooNews } from "@/lib/market/yahoo"
 import {
   getCompanyNews,
@@ -50,7 +51,7 @@ export async function GET(request: NextRequest) {
   }
 
   // Company-specific news
-  if (!symbol) {
+  if (!isValidSymbol(symbol)) {
     return NextResponse.json(
       { error: "symbol or category parameter required" },
       { status: 400 }

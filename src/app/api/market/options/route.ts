@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getOptions } from "@/lib/market/yahoo"
 import { blackScholesGreeks, premiumYield, ivStats, ivRank } from "@/lib/market/options-math"
+import { isValidSymbol } from "@/lib/validation"
 import type { OptionContract, OptionsChainData } from "@/types/market"
 
 const RISK_FREE_RATE = 0.043 // ~4.3% — approximate current rate
@@ -10,7 +11,7 @@ export async function GET(request: NextRequest) {
   const symbol = searchParams.get("symbol")
   const expiration = searchParams.get("expiration")
 
-  if (!symbol) {
+  if (!isValidSymbol(symbol)) {
     return NextResponse.json({ error: "symbol is required" }, { status: 400 })
   }
 

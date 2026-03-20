@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getQuote, getMultipleQuotes } from "@/lib/market/yahoo"
+import { isValidSymbol } from "@/lib/validation"
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
@@ -11,6 +12,10 @@ export async function GET(request: NextRequest) {
 
   try {
     const symbolList = symbols.split(",").map((s) => s.trim().toUpperCase())
+
+    if (symbolList.length > 50 || symbolList.some((s) => !isValidSymbol(s))) {
+      return NextResponse.json({ error: "Invalid symbols parameter" }, { status: 400 })
+    }
 
     if (symbolList.length === 1) {
       const quote = await getQuote(symbolList[0])
