@@ -20,6 +20,8 @@ import {
 import { calcSMA, calcEMA, calcRSI, calcMACD, calcBollingerBands } from "@/lib/market/indicators"
 import type { OHLC } from "@/types/market"
 import { cn } from "@/lib/utils"
+import { DrawingToolbar, DrawingOverlay, useDrawings } from "./drawing-tools"
+import type { DrawingToolType } from "./drawing-tools"
 
 // ── Constants ────────────────────────────────────────────
 
@@ -153,6 +155,10 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
     return false
   })
   const menuRef = useRef<HTMLDivElement>(null)
+  const [chartDimensions, setChartDimensions] = useState({ width: 0, height: 0 })
+
+  // Drawing tools
+  const drawingTools = useDrawings(symbol)
 
   // Stable refs for callbacks (avoid putting these in effect deps)
   const dataRef = useRef<OHLC[]>(data)
@@ -211,6 +217,33 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
     document.addEventListener("mousedown", handleClick)
     return () => document.removeEventListener("mousedown", handleClick)
   }, [])
+
+  // Drawing tool keyboard shortcuts
+  useEffect(() => {
+    const shortcuts: Record<string, DrawingToolType> = {
+      v: "cursor", t: "trendline", h: "horizontal", f: "fibonacci",
+      l: "longposition", s: "shortposition", r: "rectangle", m: "measure",
+    }
+    function handleKey(e: KeyboardEvent) {
+      // Ignore when typing in inputs
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      const key = e.key.toLowerCase()
+      if (key === "escape") {
+        drawingTools.cancelDrawing()
+        return
+      }
+      if ((e.ctrlKey || e.metaKey) && key === "z") {
+        e.preventDefault()
+        drawingTools.undo()
+        return
+      }
+      if (shortcuts[key]) {
+        drawingTools.selectTool(shortcuts[key])
+      }
+    }
+    window.addEventListener("keydown", handleKey)
+    return () => window.removeEventListener("keydown", handleKey)
+  }, [drawingTools])
 
   const toggleIndicator = useCallback((id: string) => {
     setIndicators((prev) => prev.map((ind) => ind.id === id ? { ...ind, active: !ind.active } : ind))
@@ -547,7 +580,11 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const w = entry.contentRect.width
-        if (w > 0) allCharts.forEach((c) => c.applyOptions({ width: w }))
+        const h = entry.contentRect.height
+        if (w > 0) {
+          allCharts.forEach((c) => c.applyOptions({ width: w }))
+          setChartDimensions({ width: w, height: h })
+        }
       }
     })
     resizeObserver.observe(container)
@@ -860,27 +897,80 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
         </div>
       </div>
 
-      {/* ── OHLC Legend overlay ──────────────────────────── */}
+      {/* ── Chart area with drawing toolbar ────────────── */}
       <div className="relative">
-        {legend && (
-          <div className="absolute top-2 left-3 z-10 flex items-center gap-3 text-xs pointer-events-none" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>
-            <span className="font-semibold text-[#d1d4dc]">{symbol}</span>
-            <span className="text-[#787b86]">{legend.time}</span>
-            <span className="text-[#787b86]">O <span style={{ color: isPositive ? UP_COLOR : DOWN_COLOR }}>{legend.open.toFixed(2)}</span></span>
-            <span className="text-[#787b86]">H <span style={{ color: isPositive ? UP_COLOR : DOWN_COLOR }}>{legend.high.toFixed(2)}</span></span>
-            <span className="text-[#787b86]">L <span style={{ color: isPositive ? UP_COLOR : DOWN_COLOR }}>{legend.low.toFixed(2)}</span></span>
-            <span className="text-[#787b86]">C <span style={{ color: isPositive ? UP_COLOR : DOWN_COLOR }}>{legend.close.toFixed(2)}</span></span>
-            <span style={{ color: isPositive ? UP_COLOR : DOWN_COLOR }}>
-              {isPositive ? "+" : ""}{legend.change.toFixed(2)} ({isPositive ? "+" : ""}{legend.changePct.toFixed(2)}%)
-            </span>
-            {legend.volume > 0 && (
-              <span className="text-[#787b86]">Vol <span className="text-[#d1d4dc]">{formatVol(legend.volume)}</span></span>
-            )}
-          </div>
-        )}
+        {/* Drawing toolbar (left side, TradingView style) */}
+        <DrawingToolbar
+          activeTool={drawingTools.activeTool}
+          onSelectTool={drawingTools.selectTool}
+          onClearAll={drawingTools.clearAllDrawings}
+          onUndo={drawingTools.undo}
+          canUndo={drawingTools.canUndo}
+          drawingCount={drawingTools.drawings.length}
+        />
 
-        {/* Main chart */}
-        <div ref={mainChartRef} />
+        {/* Chart content area (offset for toolbar) */}
+        <div style={{ marginLeft: 36 }}>
+          {/* OHLC Legend overlay */}
+          <div className="relative">
+            {legend && (
+              <div className="absolute top-2 left-3 z-10 flex items-center gap-3 text-xs pointer-events-none" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>
+                <span className="font-semibold text-[#d1d4dc]">{symbol}</span>
+                <span className="text-[#787b86]">{legend.time}</span>
+                <span className="text-[#787b86]">O <span style={{ color: isPositive ? UP_COLOR : DOWN_COLOR }}>{legend.open.toFixed(2)}</span></span>
+                <span className="text-[#787b86]">H <span style={{ color: isPositive ? UP_COLOR : DOWN_COLOR }}>{legend.high.toFixed(2)}</span></span>
+                <span className="text-[#787b86]">L <span style={{ color: isPositive ? UP_COLOR : DOWN_COLOR }}>{legend.low.toFixed(2)}</span></span>
+                <span className="text-[#787b86]">C <span style={{ color: isPositive ? UP_COLOR : DOWN_COLOR }}>{legend.close.toFixed(2)}</span></span>
+                <span style={{ color: isPositive ? UP_COLOR : DOWN_COLOR }}>
+                  {isPositive ? "+" : ""}{legend.change.toFixed(2)} ({isPositive ? "+" : ""}{legend.changePct.toFixed(2)}%)
+                </span>
+                {legend.volume > 0 && (
+                  <span className="text-[#787b86]">Vol <span className="text-[#d1d4dc]">{formatVol(legend.volume)}</span></span>
+                )}
+              </div>
+            )}
+
+            {/* Active tool indicator */}
+            {drawingTools.isDrawing && (
+              <div className="absolute top-2 right-16 z-10 flex items-center gap-2 text-xs pointer-events-none">
+                <span className="px-2 py-0.5 rounded text-[#d1d4dc]" style={{ background: "#2962ff" }}>
+                  {drawingTools.activeTool === "trendline" && "Click two points for trend line"}
+                  {drawingTools.activeTool === "horizontal" && "Click to place horizontal line"}
+                  {drawingTools.activeTool === "fibonacci" && "Click two points for Fib retracement"}
+                  {drawingTools.activeTool === "longposition" && "Click entry point for long position"}
+                  {drawingTools.activeTool === "shortposition" && "Click entry point for short position"}
+                  {drawingTools.activeTool === "rectangle" && "Click two corners for rectangle"}
+                  {drawingTools.activeTool === "measure" && "Click two points to measure"}
+                </span>
+                <span className="text-[#787b86]">ESC to cancel</span>
+              </div>
+            )}
+
+            {/* Main chart */}
+            <div ref={mainChartRef} />
+
+            {/* Drawing overlay (SVG layer on top of chart) */}
+            <DrawingOverlay
+              chart={chartsRef.current.main}
+              candleSeries={chartsRef.current.series["candle"] ?? null}
+              drawings={drawingTools.drawings}
+              activeTool={drawingTools.activeTool}
+              pendingPoints={drawingTools.pendingPoints}
+              hoverPoint={drawingTools.hoverPoint}
+              selectedId={drawingTools.selectedId}
+              dragState={drawingTools.dragState}
+              onChartClick={drawingTools.handleChartClick}
+              onHoverPoint={drawingTools.setHoverPoint}
+              onSelectDrawing={drawingTools.selectDrawing}
+              onRemoveDrawing={drawingTools.removeDrawing}
+              onUpdateDrawing={drawingTools.updateDrawing}
+              onDuplicateDrawing={drawingTools.duplicateDrawing}
+              onStartDrag={drawingTools.startDrag}
+              onDragMove={drawingTools.dragMove}
+              onEndDrag={drawingTools.endDrag}
+              width={chartDimensions.width}
+              height={chartDimensions.height}
+            />
 
         {/* Alert line overlays — hover to reveal delete, drag to move */}
         {alertCoords.map((ac) => {
@@ -961,11 +1051,13 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
             {toast}
           </div>
         )}
-      </div>
+          </div>{/* end relative (OHLC legend + chart + overlay) */}
+        </div>{/* end marginLeft:36 (chart content area) */}
+      </div>{/* end relative (toolbar wrapper) */}
 
       {/* RSI sub-chart */}
       {showRSI && (
-        <div className="relative">
+        <div className="relative" style={{ marginLeft: 36 }}>
           <div className="absolute top-1 left-3 z-10 text-[10px] pointer-events-none" style={{ color: "#b39ddb" }}>
             RSI(14)
           </div>
@@ -975,7 +1067,7 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
 
       {/* MACD sub-chart */}
       {showMACD && (
-        <div className="relative">
+        <div className="relative" style={{ marginLeft: 36 }}>
           <div className="absolute top-1 left-3 z-10 text-[10px] pointer-events-none flex gap-3">
             <span style={{ color: "#2196f3" }}>MACD(12,26,9)</span>
             <span style={{ color: "#ff9800" }}>Signal</span>
