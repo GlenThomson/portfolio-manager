@@ -148,7 +148,7 @@ function FearGreedSection({
   return (
     <Card>
       <CardContent className="pt-6">
-        <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] gap-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6 items-start">
           {/* Left: Gauge */}
           <div className="flex flex-col items-center">
             <div className="w-56 h-32">
