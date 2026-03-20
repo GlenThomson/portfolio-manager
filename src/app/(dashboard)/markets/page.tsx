@@ -149,7 +149,7 @@ function FearGreedSection({
   return (
     <Card>
       <CardContent className="pt-6">
-        <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] gap-6 items-start">
+        <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] gap-6 items-stretch">
           {/* Left: Gauge */}
           <div className="flex flex-col items-center">
             <div className="w-56 h-32">
@@ -218,7 +218,7 @@ function FearGreedSection({
 
           {/* Right: History chart */}
           {history.length > 1 && (
-            <div className="flex flex-col gap-2 min-w-0">
+            <div className="flex flex-col gap-2 min-w-0 flex-1">
               <div className="flex items-center justify-between">
                 <p className="text-sm text-muted-foreground font-medium">Historical</p>
                 <div className="flex gap-1">
@@ -238,8 +238,8 @@ function FearGreedSection({
                   ))}
                 </div>
               </div>
-              <div className="w-full">
-                <svg viewBox={`0 0 ${chartW} ${chartH}`} className="w-full" preserveAspectRatio="none" style={{ height: "180px" }}>
+              <div className="w-full flex-1 min-h-0">
+                <svg viewBox={`0 0 ${chartW} ${chartH}`} className="w-full h-full" preserveAspectRatio="none">
                   {/* Zone bands */}
                   {[
                     { from: 75, to: 100, color: "#16c784" },
