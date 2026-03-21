@@ -173,6 +173,77 @@ export function parseCSVHeaders(csvText: string): {
   }
 }
 
+export type BrokerFormat = "sharesies" | "ibkr" | "generic"
+
+export interface BrokerDetectionResult {
+  broker: BrokerFormat
+  suggestedMapping: ColumnMapping
+}
+
+/** Auto-detect broker format from CSV headers and return a suggested column mapping */
+export function detectBrokerFormat(headers: string[]): BrokerDetectionResult {
+  const lower = headers.map((h) => h.toLowerCase())
+
+  // Sharesies: "Investment ticker symbol", "Ending shareholding", "Dollar value of shares purchased..."
+  if (
+    lower.some((h) => h.includes("investment ticker symbol")) &&
+    lower.some((h) => h.includes("ending shareholding"))
+  ) {
+    const symbolCol = headers.find((h) => h.toLowerCase().includes("investment ticker symbol")) ?? ""
+    const quantityCol = headers.find((h) => h.toLowerCase().includes("ending shareholding")) ?? ""
+    const totalCostCol = headers.find((h) =>
+      h.toLowerCase().includes("dollar value of shares purchased")
+    ) ?? ""
+    const feesCol = headers.find((h) => h.toLowerCase().includes("transaction fees")) ?? ""
+
+    return {
+      broker: "sharesies",
+      suggestedMapping: {
+        symbol: symbolCol,
+        quantity: quantityCol,
+        price: "", // calculated from totalCost / quantity
+        totalCost: totalCostCol,
+        fees: feesCol || undefined,
+      },
+    }
+  }
+
+  // IBKR: "Symbol", "Quantity", "Average Cost", "Financial Instrument" etc.
+  if (
+    lower.some((h) => h === "financial instrument" || h === "asset category") &&
+    lower.some((h) => h === "symbol") &&
+    lower.some((h) => h === "quantity" || h === "position")
+  ) {
+    const symbolCol = headers.find((h) => h.toLowerCase() === "symbol") ?? ""
+    const quantityCol = headers.find((h) =>
+      h.toLowerCase() === "quantity" || h.toLowerCase() === "position"
+    ) ?? ""
+    const priceCol = headers.find((h) =>
+      h.toLowerCase() === "average cost" || h.toLowerCase() === "cost basis"
+    ) ?? ""
+    const feesCol = headers.find((h) => h.toLowerCase() === "commission") ?? ""
+
+    return {
+      broker: "ibkr",
+      suggestedMapping: {
+        symbol: symbolCol,
+        quantity: quantityCol,
+        price: priceCol,
+        fees: feesCol || undefined,
+      },
+    }
+  }
+
+  return {
+    broker: "generic",
+    suggestedMapping: {
+      symbol: "",
+      quantity: "",
+      price: "",
+    },
+  }
+}
+
 /** Auto-detect cash/wallet columns from headers */
 export function detectCashColumns(headers: string[]): CashMapping {
   const cash: CashMapping = {}
