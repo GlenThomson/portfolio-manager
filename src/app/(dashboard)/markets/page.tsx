@@ -149,7 +149,7 @@ function FearGreedSection({
   return (
     <Card>
       <CardContent className="pt-6">
-        <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] gap-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6 items-start">
           {/* Left: Gauge */}
           <div className="flex flex-col items-center">
             <div className="w-56 h-32">
@@ -238,63 +238,58 @@ function FearGreedSection({
                   ))}
                 </div>
               </div>
-              <div className="w-full">
-                <svg viewBox={`0 0 ${chartW} ${chartH}`} className="w-full" preserveAspectRatio="none" style={{ height: "180px" }}>
-                  {/* Zone bands */}
-                  {[
-                    { from: 75, to: 100, color: "#16c784" },
-                    { from: 55, to: 75, color: "#30d5c8" },
-                    { from: 45, to: 55, color: "#9ca3af" },
-                    { from: 25, to: 45, color: "#ea8c00" },
-                    { from: 0, to: 25, color: "#ea3943" },
-                  ].map((band) => (
-                    <rect
-                      key={band.from}
-                      x="0"
-                      y={chartPad + (1 - band.to / 100) * innerH}
-                      width={chartW - rightPad}
-                      height={((band.to - band.from) / 100) * innerH}
-                      fill={band.color}
-                      opacity="0.06"
-                    />
+              <div className="w-full flex gap-1">
+                <div className="flex-1 min-w-0">
+                  <svg viewBox={`0 0 ${chartW - rightPad} ${chartH}`} className="w-full" preserveAspectRatio="xMidYMid meet" style={{ height: "220px" }}>
+                    {/* Zone bands */}
+                    {[
+                      { from: 75, to: 100, color: "#16c784" },
+                      { from: 55, to: 75, color: "#30d5c8" },
+                      { from: 45, to: 55, color: "#9ca3af" },
+                      { from: 25, to: 45, color: "#ea8c00" },
+                      { from: 0, to: 25, color: "#ea3943" },
+                    ].map((band) => (
+                      <rect
+                        key={band.from}
+                        x="0"
+                        y={chartPad + (1 - band.to / 100) * innerH}
+                        width={chartW - rightPad}
+                        height={((band.to - band.from) / 100) * innerH}
+                        fill={band.color}
+                        opacity="0.06"
+                      />
+                    ))}
+                    {/* Threshold lines */}
+                    {[25, 50, 75].map((v) => (
+                      <line
+                        key={v}
+                        x1="0" x2={chartW - rightPad}
+                        y1={chartPad + (1 - v / 100) * innerH}
+                        y2={chartPad + (1 - v / 100) * innerH}
+                        stroke="#787b86" strokeWidth="0.5" strokeDasharray="4 3" opacity="0.3"
+                      />
+                    ))}
+                    {/* Area fill */}
+                    <path d={historyAreaPath} fill="url(#fgGrad)" opacity="0.2" />
+                    {/* Line */}
+                    <path d={historyPath} fill="none" stroke={color} strokeWidth="1" />
+                    <defs>
+                      <linearGradient id="fgGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={color} stopOpacity="0.5" />
+                        <stop offset="100%" stopColor={color} stopOpacity="0" />
+                      </linearGradient>
+                    </defs>
+                  </svg>
+                  <div className="flex justify-between text-[10px] text-muted-foreground mt-1 px-1">
+                    <span>{formatDate(history[0].date)}</span>
+                    <span>{formatDate(history[history.length - 1].date)}</span>
+                  </div>
+                </div>
+                {/* Y-axis labels rendered as HTML to prevent SVG stretching */}
+                <div className="flex flex-col justify-between py-1 shrink-0" style={{ height: "220px" }}>
+                  {[100, 75, 50, 25, 0].map((v) => (
+                    <span key={v} className="text-[10px] text-muted-foreground leading-none">{v}</span>
                   ))}
-                  {/* Threshold lines */}
-                  {[25, 50, 75].map((v) => (
-                    <line
-                      key={v}
-                      x1="0" x2={chartW - rightPad}
-                      y1={chartPad + (1 - v / 100) * innerH}
-                      y2={chartPad + (1 - v / 100) * innerH}
-                      stroke="#787b86" strokeWidth="0.5" strokeDasharray="4 3" opacity="0.3"
-                    />
-                  ))}
-                  {/* Y-axis labels */}
-                  {[0, 25, 50, 75, 100].map((v) => (
-                    <text
-                      key={v}
-                      x={chartW - rightPad + 6}
-                      y={chartPad + (1 - v / 100) * innerH + 3}
-                      fontSize="8"
-                      fill="#9ca3af"
-                      textAnchor="start"
-                    >
-                      {v}
-                    </text>
-                  ))}
-                  {/* Area fill */}
-                  <path d={historyAreaPath} fill="url(#fgGrad)" opacity="0.2" />
-                  {/* Line */}
-                  <path d={historyPath} fill="none" stroke={color} strokeWidth="1" />
-                  <defs>
-                    <linearGradient id="fgGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={color} stopOpacity="0.5" />
-                      <stop offset="100%" stopColor={color} stopOpacity="0" />
-                    </linearGradient>
-                  </defs>
-                </svg>
-                <div className="flex justify-between text-[10px] text-muted-foreground mt-1 px-1">
-                  <span>{formatDate(history[0].date)}</span>
-                  <span>{formatDate(history[history.length - 1].date)}</span>
                 </div>
               </div>
             </div>

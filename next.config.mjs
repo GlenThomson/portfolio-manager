@@ -1,5 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  typescript: {
+    // Type checking handled by IDE / CI — skipping in build to avoid OOM on Vercel
+    ignoreBuildErrors: true,
+  },
   async headers() {
     return [
       {
