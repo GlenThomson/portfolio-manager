@@ -18,6 +18,7 @@ interface BrokerConnectProps {
   portfolioId: string
   onImportComplete: () => void
   ibkrConnected?: boolean
+  akahuConnected?: boolean
 }
 
 type ImportResult = {
@@ -50,8 +51,15 @@ export function BrokerConnectDialog({
   portfolioId,
   onImportComplete,
   ibkrConnected = false,
+  akahuConnected = false,
 }: BrokerConnectProps) {
   const [syncing, setSyncing] = useState(false)
+  const [akahuSyncing, setAkahuSyncing] = useState(false)
+  const [akahuConnecting, setAkahuConnecting] = useState(false)
+  const [akahuAppToken, setAkahuAppToken] = useState("")
+  const [akahuUserToken, setAkahuUserToken] = useState("")
+  const [unresolvedTickers, setUnresolvedTickers] = useState<string[]>([])
+  const [tickerOverrides, setTickerOverrides] = useState<Record<string, string>>({})
   const [uploading, setUploading] = useState(false)
   const [importing, setImporting] = useState(false)
   const [result, setResult] = useState<ImportResult>(null)
@@ -284,6 +292,98 @@ export function BrokerConnectDialog({
     }
   }
 
+  async function handleAkahuConnect() {
+    setAkahuConnecting(true)
+    setError(null)
+    setResult(null)
+
+    try {
+      const res = await fetch("/api/brokers/akahu/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ appToken: akahuAppToken.trim(), userToken: akahuUserToken.trim() }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to connect")
+      }
+
+      setAkahuAppToken("")
+      setAkahuUserToken("")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to connect")
+      setAkahuConnecting(false)
+      return
+    }
+
+    // Auto-sync immediately after connecting
+    try {
+      const syncRes = await fetch("/api/brokers/akahu/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ portfolioId }),
+      })
+
+      if (!syncRes.ok) {
+        const data = await syncRes.json()
+        throw new Error(data.error || "Sync failed")
+      }
+
+      const syncData = await syncRes.json()
+
+      if (syncData.unresolved?.length > 0) {
+        setUnresolvedTickers(syncData.unresolved)
+      }
+
+      setResult(syncData)
+      onImportComplete()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Connected but sync failed — try the Sync button")
+    } finally {
+      setAkahuConnecting(false)
+    }
+  }
+
+  async function handleAkahuSync() {
+    setAkahuSyncing(true)
+    setError(null)
+    setResult(null)
+
+    try {
+      const res = await fetch("/api/brokers/akahu/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ portfolioId, tickerOverrides }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || "Sync failed")
+      }
+
+      const data = await res.json()
+
+      if (data.unresolved?.length > 0) {
+        setUnresolvedTickers(data.unresolved)
+      }
+
+      if (data.imported > 0 || data.skipped > 0) {
+        setResult(data)
+        onImportComplete()
+      } else if (data.needsMapping) {
+        setError("Some holdings could not be matched to tickers. Please map them below.")
+      } else {
+        setResult(data)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sync failed")
+    } finally {
+      setAkahuSyncing(false)
+    }
+  }
+
   async function handleIBKRSync() {
     setSyncing(true)
     setError(null)
@@ -331,10 +431,109 @@ export function BrokerConnectDialog({
         </DialogHeader>
 
         <Tabs defaultValue="csv" className="mt-2">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="sharesies">Sharesies</TabsTrigger>
             <TabsTrigger value="ibkr">Interactive Brokers</TabsTrigger>
             <TabsTrigger value="csv">CSV Import</TabsTrigger>
           </TabsList>
+
+          {/* ── Sharesies (via Akahu) Tab ────────────────── */}
+          <TabsContent value="sharesies" className="space-y-4 mt-4">
+            <p className="text-sm text-muted-foreground">
+              Connect your Sharesies account via Akahu (NZ open banking) to sync your holdings automatically.
+              Read-only access — your Sharesies credentials are handled securely by Akahu.
+            </p>
+
+            {akahuConnected ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-sm text-green-500">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Sharesies account connected via Akahu
+                </div>
+
+                {/* Unresolved ticker mapping UI */}
+                {unresolvedTickers.length > 0 && (
+                  <div className="rounded-md border border-yellow-500/20 bg-yellow-500/5 p-3 space-y-2">
+                    <p className="text-sm font-medium text-yellow-500">
+                      {unresolvedTickers.length} holding{unresolvedTickers.length !== 1 ? "s" : ""} need manual ticker mapping
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Enter the ticker symbol for each holding (e.g. AAPL, FPH.NZ)
+                    </p>
+                    {unresolvedTickers.map((name) => (
+                      <div key={name} className="flex items-center gap-2">
+                        <span className="text-sm truncate max-w-[200px]" title={name}>{name}</span>
+                        <input
+                          type="text"
+                          placeholder="TICKER"
+                          className="flex-1 text-sm rounded-md border bg-background px-2 py-1 uppercase"
+                          value={tickerOverrides[name] ?? ""}
+                          onChange={(e) =>
+                            setTickerOverrides((prev) => ({
+                              ...prev,
+                              [name]: e.target.value.toUpperCase(),
+                            }))
+                          }
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <Button
+                  onClick={handleAkahuSync}
+                  disabled={akahuSyncing}
+                  className="w-full"
+                >
+                  {akahuSyncing ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                  )}
+                  Sync Holdings
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="rounded-md border border-border p-3 space-y-3">
+                  <p className="text-sm font-medium">Connect with Akahu</p>
+                  <p className="text-xs text-muted-foreground">
+                    Create a free personal app at{" "}
+                    <a href="https://my.akahu.nz/apps" target="_blank" rel="noopener noreferrer" className="underline">
+                      my.akahu.nz
+                    </a>
+                    , connect your Sharesies account, then paste your tokens below.
+                  </p>
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      placeholder="App Token (app_token_...)"
+                      className="w-full text-sm rounded-md border bg-background px-3 py-2"
+                      value={akahuAppToken}
+                      onChange={(e) => setAkahuAppToken(e.target.value)}
+                    />
+                    <input
+                      type="text"
+                      placeholder="User Token (user_token_...)"
+                      className="w-full text-sm rounded-md border bg-background px-3 py-2"
+                      value={akahuUserToken}
+                      onChange={(e) => setAkahuUserToken(e.target.value)}
+                    />
+                  </div>
+                  <Button
+                    onClick={handleAkahuConnect}
+                    disabled={akahuConnecting || !akahuAppToken.trim() || !akahuUserToken.trim()}
+                    className="w-full"
+                  >
+                    {akahuConnecting ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : null}
+                    Connect
+                  </Button>
+                </div>
+              </div>
+            )}
+          </TabsContent>
 
           {/* ── Interactive Brokers Tab ──────────────────── */}
           <TabsContent value="ibkr" className="space-y-4 mt-4">

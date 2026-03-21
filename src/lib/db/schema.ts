@@ -17,7 +17,7 @@ export const assetTypeEnum = pgEnum("asset_type", ["stock", "etf", "crypto", "op
 export const transactionActionEnum = pgEnum("transaction_action", ["buy", "sell", "dividend", "split"])
 export const chatRoleEnum = pgEnum("chat_role", ["user", "assistant", "system"])
 export const alertConditionEnum = pgEnum("alert_condition", ["above", "below", "pct_change"])
-export const brokerEnum = pgEnum("broker", ["ibkr", "sharesies"])
+export const brokerEnum = pgEnum("broker", ["ibkr", "sharesies", "akahu"])
 
 // ── User Profiles ──────────────────────────────────────
 

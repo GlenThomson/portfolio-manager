@@ -61,6 +61,7 @@ export default function PortfolioDetailPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [importDialogOpen, setImportDialogOpen] = useState(false)
   const [ibkrConnected, setIbkrConnected] = useState(false)
+  const [akahuConnected, setAkahuConnected] = useState(false)
   const [form, setForm] = useState<TransactionForm>({ symbol: "", action: "buy", quantity: "", price: "" })
   const [loading, setLoading] = useState(true)
   const [expandedPositions, setExpandedPositions] = useState<Set<string>>(new Set())
@@ -69,27 +70,43 @@ export default function PortfolioDetailPage() {
 
   useEffect(() => {
     fetchData()
-    // Check if IBKR is connected
-    async function checkIbkr() {
+    // Check broker connections
+    async function checkBrokers() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      const { data } = await supabase
+      const { data: connections } = await supabase
         .from("broker_connections")
-        .select("id")
+        .select("broker")
         .eq("user_id", user.id)
-        .eq("broker", "ibkr")
-        .limit(1)
-        .single()
-      if (data) setIbkrConnected(true)
+      if (connections) {
+        setIbkrConnected(connections.some((c) => c.broker === "ibkr"))
+        if (connections.some((c) => c.broker === "akahu")) {
+          setAkahuConnected(true)
+        }
+      }
+      // Also check env-based Akahu personal token
+      if (!connections?.some((c) => c.broker === "akahu")) {
+        try {
+          const res = await fetch("/api/brokers/akahu/status")
+          if (res.ok) {
+            const status = await res.json()
+            if (status.connected) setAkahuConnected(true)
+          }
+        } catch { /* ignore */ }
+      }
     }
-    checkIbkr()
+    checkBrokers()
   }, [portfolioId])
 
   useEffect(() => {
-    // Auto-open import dialog after IBKR OAuth callback
+    // Auto-open import dialog after broker OAuth callback
     if (searchParams.get("ibkr") === "connected") {
       setIbkrConnected(true)
+      setImportDialogOpen(true)
+    }
+    if (searchParams.get("akahu") === "connected") {
+      setAkahuConnected(true)
       setImportDialogOpen(true)
     }
   }, [searchParams])
@@ -454,6 +471,7 @@ export default function PortfolioDetailPage() {
           portfolioId={portfolioId}
           onImportComplete={fetchData}
           ibkrConnected={ibkrConnected}
+          akahuConnected={akahuConnected}
         />
       </div>
 
