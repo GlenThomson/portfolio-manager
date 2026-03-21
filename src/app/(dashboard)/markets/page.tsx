@@ -240,7 +240,7 @@ function FearGreedSection({
               </div>
               <div className="w-full flex gap-1">
                 <div className="flex-1 min-w-0">
-                  <svg viewBox={`0 0 ${chartW - rightPad} ${chartH}`} className="w-full" preserveAspectRatio="xMidYMid meet" style={{ height: "220px" }}>
+                  <svg viewBox={`0 0 ${chartW - rightPad} ${chartH}`} className="w-full" preserveAspectRatio="none" style={{ height: "220px" }}>
                     {/* Zone bands */}
                     {[
                       { from: 75, to: 100, color: "#16c784" },
@@ -709,9 +709,9 @@ export default function MarketsPage() {
   useEffect(() => {
     setFearGreed(null)
     fetch(`/api/market/fear-greed?range=${fgRange}`)
-      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => r.json())
       .then((d) => { if (d && !d.error) setFearGreed(d) })
-      .catch(() => {})
+      .catch((err) => console.error("Fear & Greed fetch failed:", err))
   }, [fgRange])
 
   const handleRefresh = () => {
