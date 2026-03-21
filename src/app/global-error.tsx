@@ -1,7 +1,8 @@
 "use client"
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export default function GlobalError({
-  error: _error,
+  error,
   reset,
 }: {
   error: Error & { digest?: string }
@@ -14,7 +15,7 @@ export default function GlobalError({
           <div style={{ textAlign: "center", maxWidth: 400 }}>
             <h2 style={{ marginBottom: 8 }}>Something went wrong</h2>
             <p style={{ color: "#888", fontSize: 14, marginBottom: 16 }}>
-              An unexpected error occurred.
+              {error.message || "An unexpected error occurred."}
             </p>
             <button
               onClick={reset}
