@@ -72,10 +72,12 @@ export interface InsiderSentiment {
   mspr: number
 }
 
-// Simple in-memory cache with 5min TTL
+// Simple in-memory cache with configurable TTL
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const cache = new Map<string, { data: any; expiry: number }>()
-const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+const CACHE_TTL_SHORT = 5 * 60 * 1000    // 5 min — per-symbol news
+const CACHE_TTL_MEDIUM = 30 * 60 * 1000  // 30 min — analyst, insider, per-symbol earnings
+const CACHE_TTL_LONG = 2 * 60 * 60 * 1000 // 2 hours — earnings calendar (shared across users)
 
 // Rate limiter: 60 requests per minute
 let requestTimestamps: number[] = []
@@ -102,8 +104,8 @@ function getCached<T = any>(key: string): T | null {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function setCache(key: string, data: any) {
-  cache.set(key, { data, expiry: Date.now() + CACHE_TTL })
+function setCache(key: string, data: any, ttl: number = CACHE_TTL_SHORT) {
+  cache.set(key, { data, expiry: Date.now() + ttl })
 }
 
 export function isFinnhubConfigured(): boolean {
@@ -225,7 +227,7 @@ export async function getEarningsCalendar(
     year: e.year ?? 0,
   }))
 
-  setCache(cacheKey, events)
+  setCache(cacheKey, events, CACHE_TTL_LONG)
   return events
 }
 
@@ -257,7 +259,7 @@ export async function getEarnings(symbol: string): Promise<EarningsHistory[]> {
     year: e.year ?? 0,
   }))
 
-  setCache(cacheKey, earnings)
+  setCache(cacheKey, earnings, CACHE_TTL_MEDIUM)
   return earnings
 }
 
@@ -290,7 +292,7 @@ export async function getRecommendationTrends(
     symbol: r.symbol ?? symbol,
   }))
 
-  setCache(cacheKey, trends)
+  setCache(cacheKey, trends, CACHE_TTL_MEDIUM)
   return trends
 }
 
@@ -321,7 +323,7 @@ export async function getPriceTarget(symbol: string): Promise<PriceTarget | null
     targetMedian: data.targetMedian ?? 0,
   }
 
-  setCache(cacheKey, target)
+  setCache(cacheKey, target, CACHE_TTL_MEDIUM)
   return target
 }
 
@@ -354,7 +356,7 @@ export async function getInsiderTransactions(
     transactionPrice: t.transactionPrice ?? 0,
   }))
 
-  setCache(cacheKey, txns)
+  setCache(cacheKey, txns, CACHE_TTL_MEDIUM)
   return txns
 }
 
@@ -391,6 +393,6 @@ export async function getInsiderSentiment(
     mspr: s.mspr ?? 0,
   }))
 
-  setCache(cacheKey, sentiments)
+  setCache(cacheKey, sentiments, CACHE_TTL_MEDIUM)
   return sentiments
 }

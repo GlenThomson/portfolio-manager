@@ -26,13 +26,17 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: "Invalid symbol format" }, { status: 400 })
       }
       const earnings = await getEarnings(symbol.toUpperCase())
-      return NextResponse.json({ symbol: symbol.toUpperCase(), earnings })
+      return NextResponse.json({ symbol: symbol.toUpperCase(), earnings }, {
+        headers: { "Cache-Control": "public, s-maxage=1800, stale-while-revalidate=3600" },
+      })
     }
 
     // If from/to are provided, return earnings calendar
     if (from && to) {
       const events = await getEarningsCalendar(from, to)
-      return NextResponse.json({ from, to, events })
+      return NextResponse.json({ from, to, events }, {
+        headers: { "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=7200" },
+      })
     }
 
     // Default: return next 2 weeks of earnings
@@ -42,7 +46,9 @@ export async function GET(req: NextRequest) {
     const defaultFrom = now.toISOString().split("T")[0]
     const defaultTo = twoWeeks.toISOString().split("T")[0]
     const events = await getEarningsCalendar(defaultFrom, defaultTo)
-    return NextResponse.json({ from: defaultFrom, to: defaultTo, events })
+    return NextResponse.json({ from: defaultFrom, to: defaultTo, events }, {
+      headers: { "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=7200" },
+    })
   } catch (error) {
     console.error("Earnings API error:", error)
     return NextResponse.json(

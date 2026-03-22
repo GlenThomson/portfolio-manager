@@ -30,6 +30,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       symbol: upperSymbol,
       transactions,
+    }, {
+      headers: { "Cache-Control": "public, s-maxage=1800, stale-while-revalidate=3600" },
     })
   } catch (error) {
     console.error("Insider API error:", error)
