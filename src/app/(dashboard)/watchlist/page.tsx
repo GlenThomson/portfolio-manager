@@ -18,7 +18,7 @@ const MiniSparkline = dynamic(
 import { Plus, Star, TrendingUp, TrendingDown, X, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useCurrency } from "@/hooks/useCurrency"
-import { useWatchlistMeta, useWatchlistQuotes } from "@/hooks/use-watchlist-data"
+import { useWatchlistMeta, useWatchlistQuotes, fetchSingleQuote } from "@/hooks/use-watchlist-data"
 import type { WatchlistItem } from "@/hooks/use-watchlist-data"
 
 export default function WatchlistPage() {
@@ -43,7 +43,7 @@ export default function WatchlistPage() {
 
     const newSymbols = [...symbols, symbol]
 
-    // Optimistically update meta so the card appears instantly
+    // Optimistically update meta so the card appears instantly (with spinner)
     queryClient.setQueryData(["watchlist-meta"], (old: { id: string | null; symbols: string[] } | undefined) => ({
       id: old?.id ?? null,
       symbols: newSymbols,
@@ -52,29 +52,42 @@ export default function WatchlistPage() {
     setNewSymbol("")
     setDialogOpen(false)
 
+    // Save to DB
     if (watchlistId) {
       await supabase
         .from("watchlists")
         .update({ symbols: newSymbols })
         .eq("id", watchlistId)
     } else {
-      await supabase
+      const { data: inserted } = await supabase
         .from("watchlists")
         .insert({ user_id: userId, name: "My Watchlist", symbols: newSymbols })
         .select("id")
         .single()
+      if (inserted) {
+        queryClient.setQueryData(["watchlist-meta"], { id: inserted.id, symbols: newSymbols })
+      }
     }
 
-    // Refetch quotes in background — static key means old data stays visible
-    queryClient.invalidateQueries({ queryKey: ["watchlist-quotes"] })
-    queryClient.invalidateQueries({ queryKey: ["watchlist-meta"] })
+    // Fetch ONLY the new symbol's data, then merge into existing cache
+    const newItem = await fetchSingleQuote(symbol)
+    if (newItem) {
+      queryClient.setQueryData<Record<string, WatchlistItem>>(["watchlist-quotes"], (old) => ({
+        ...old,
+        [symbol]: newItem,
+      }))
+    }
   }
 
   async function removeSymbol(symbol: string) {
     if (!watchlistId) return
     const newSymbols = symbols.filter((s) => s !== symbol)
 
-    // Optimistically remove from quotes cache
+    // Optimistically remove card and its data — no refetch needed
+    queryClient.setQueryData(["watchlist-meta"], (old: { id: string | null; symbols: string[] } | undefined) => ({
+      id: old?.id ?? null,
+      symbols: newSymbols,
+    }))
     queryClient.setQueryData<Record<string, WatchlistItem>>(["watchlist-quotes"], (old) => {
       if (!old) return old
       const updated = { ...old }
@@ -82,20 +95,12 @@ export default function WatchlistPage() {
       return updated
     })
 
-    // Optimistically update meta — card disappears instantly
-    queryClient.setQueryData(["watchlist-meta"], (old: { id: string | null; symbols: string[] } | undefined) => ({
-      id: old?.id ?? null,
-      symbols: newSymbols,
-    }))
-
+    // Save to DB — no invalidation, cache is already correct
     const supabase = createClient()
     await supabase
       .from("watchlists")
       .update({ symbols: newSymbols })
       .eq("id", watchlistId)
-
-    queryClient.invalidateQueries({ queryKey: ["watchlist-quotes"] })
-    queryClient.invalidateQueries({ queryKey: ["watchlist-meta"] })
   }
 
   if (isLoading) {

@@ -1,6 +1,6 @@
 "use client"
 
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
 
 export interface WatchlistItem {
@@ -88,24 +88,43 @@ export function useWatchlistMeta() {
 }
 
 export function useWatchlistQuotes(symbols: string[]) {
-  const queryClient = useQueryClient()
-
   return useQuery({
-    // Static key — never changes, so cached data is never thrown away
     queryKey: ["watchlist-quotes"],
-    queryFn: async () => {
-      // Read the latest symbols from the meta cache at fetch time
-      const meta = queryClient.getQueryData<WatchlistMeta>(["watchlist-meta"])
-      const currentSymbols = meta?.symbols ?? symbols
-      if (currentSymbols.length === 0) return {}
-
-      const freshData = await fetchWatchlistQuotes(currentSymbols)
-
-      // Merge with existing cached data so old entries survive partial refetches
-      const existing = queryClient.getQueryData<Record<string, WatchlistItem>>(["watchlist-quotes"]) ?? {}
-      return { ...existing, ...freshData }
-    },
+    queryFn: () => fetchWatchlistQuotes(symbols),
     enabled: symbols.length > 0,
-    staleTime: 2 * 60 * 1000, // 2 min for live quotes
+    staleTime: 2 * 60 * 1000,
   })
+}
+
+/**
+ * Fetch quote + chart for a single symbol.
+ * Used when adding to watchlist so we don't refetch everything.
+ */
+export async function fetchSingleQuote(symbol: string): Promise<WatchlistItem | null> {
+  try {
+    const [quotesRes, chartRes] = await Promise.all([
+      fetch(`/api/market/quote?symbols=${symbol}`),
+      fetch(`/api/market/chart?symbol=${symbol}&period=5d&interval=15m`),
+    ])
+
+    const q = await quotesRes.json()
+    const chartData = await chartRes.json()
+
+    const sparklineData = Array.isArray(chartData)
+      ? chartData
+          .filter((d: { time: number; close: number }) => d.close > 0)
+          .map((d: { time: number; close: number }) => ({ time: d.time, value: d.close }))
+      : []
+
+    return {
+      symbol: q.symbol,
+      shortName: q.shortName,
+      price: q.regularMarketPrice,
+      change: q.regularMarketChange,
+      changePct: q.regularMarketChangePercent,
+      sparklineData,
+    }
+  } catch {
+    return null
+  }
 }
