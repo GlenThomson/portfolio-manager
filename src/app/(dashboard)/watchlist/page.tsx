@@ -43,6 +43,12 @@ export default function WatchlistPage() {
 
     const newSymbols = [...symbols, symbol]
 
+    // Copy existing quotes cache to the new query key so old items keep their data
+    const existingQuotes = queryClient.getQueryData<Record<string, WatchlistItem>>(["watchlist-quotes", symbols])
+    if (existingQuotes) {
+      queryClient.setQueryData(["watchlist-quotes", newSymbols], existingQuotes)
+    }
+
     // Optimistically update meta so the card appears instantly
     queryClient.setQueryData(["watchlist-meta"], (old: { id: string | null; symbols: string[] } | undefined) => ({
       id: old?.id ?? null,
@@ -65,14 +71,23 @@ export default function WatchlistPage() {
         .single()
     }
 
-    // Refetch in background — existing cards stay visible
-    queryClient.invalidateQueries({ queryKey: ["watchlist-meta"] })
+    // Refetch quotes in background to pick up the new symbol's data
     queryClient.invalidateQueries({ queryKey: ["watchlist-quotes"] })
+    // Sync meta from DB (won't flash — data stays during refetch)
+    queryClient.invalidateQueries({ queryKey: ["watchlist-meta"] })
   }
 
   async function removeSymbol(symbol: string) {
     if (!watchlistId) return
     const newSymbols = symbols.filter((s) => s !== symbol)
+
+    // Copy quotes cache minus the removed symbol to the new key
+    const existingQuotes = queryClient.getQueryData<Record<string, WatchlistItem>>(["watchlist-quotes", symbols])
+    if (existingQuotes) {
+      const updated = { ...existingQuotes }
+      delete updated[symbol]
+      queryClient.setQueryData(["watchlist-quotes", newSymbols], updated)
+    }
 
     // Optimistically update meta — card disappears instantly
     queryClient.setQueryData(["watchlist-meta"], (old: { id: string | null; symbols: string[] } | undefined) => ({
@@ -86,8 +101,8 @@ export default function WatchlistPage() {
       .update({ symbols: newSymbols })
       .eq("id", watchlistId)
 
-    queryClient.invalidateQueries({ queryKey: ["watchlist-meta"] })
     queryClient.invalidateQueries({ queryKey: ["watchlist-quotes"] })
+    queryClient.invalidateQueries({ queryKey: ["watchlist-meta"] })
   }
 
   if (isLoading) {
