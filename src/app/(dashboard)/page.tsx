@@ -1,6 +1,8 @@
 "use client"
 
+import { useEffect, useRef } from "react"
 import Link from "next/link"
+import dynamic from "next/dynamic"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -17,6 +19,12 @@ import { cn } from "@/lib/utils"
 import { AllocationChart } from "@/components/dashboard/allocation-chart"
 import { useCurrency } from "@/hooks/useCurrency"
 import { useDashboardData, useMarketNews } from "@/hooks/use-dashboard-data"
+import { useQuery } from "@tanstack/react-query"
+
+const NetWorthChart = dynamic(
+  () => import("@/components/charts/net-worth-chart").then((m) => ({ default: m.NetWorthChart })),
+  { ssr: false, loading: () => <div className="h-[200px] bg-muted/30 rounded animate-pulse" /> }
+)
 
 interface TopMover {
   symbol: string
@@ -30,6 +38,18 @@ export default function DashboardPage() {
   const { data, isLoading } = useDashboardData()
   const { data: marketNews = [] } = useMarketNews()
   const { fmtNative, fmtHome } = useCurrency()
+  const snapshotRecorded = useRef(false)
+
+  // Fetch net worth history
+  const { data: netWorthHistory = [] } = useQuery({
+    queryKey: ["net-worth-history"],
+    queryFn: async () => {
+      const res = await fetch("/api/net-worth")
+      if (!res.ok) return []
+      return res.json()
+    },
+    staleTime: 5 * 60 * 1000,
+  })
 
   const {
     portfolios = [],
@@ -70,6 +90,24 @@ export default function DashboardPage() {
   const totalOtherAssets = otherAssets.reduce((sum, a) => sum + a.value, 0)
   const totalLiabilities = liabilities.reduce((sum, a) => sum + a.value, 0)
   const netWorth = totalValue + totalCash + totalOtherAssets - totalLiabilities
+
+  // Record daily snapshot
+  useEffect(() => {
+    if (snapshotRecorded.current || isLoading || !data) return
+    if (totalValue === 0 && totalCash === 0 && totalOtherAssets === 0) return
+    snapshotRecorded.current = true
+    fetch("/api/net-worth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        total_investments: totalValue,
+        total_cash: totalCash,
+        total_other_assets: totalOtherAssets,
+        total_liabilities: totalLiabilities,
+        net_worth: netWorth,
+      }),
+    }).catch(() => {})
+  }, [isLoading, data, totalValue, totalCash, totalOtherAssets, totalLiabilities, netWorth])
 
   // Net worth breakdown segments
   const ASSET_TYPE_ICONS: Record<string, typeof Home> = {
@@ -385,20 +423,20 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Positions */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Positions</CardTitle>
-            <Briefcase className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stockPositions.length}</div>
-            <p className="text-xs text-muted-foreground">
-              Across {portfolios.length} portfolio{portfolios.length !== 1 ? "s" : ""}
-            </p>
-          </CardContent>
-        </Card>
       </div>
+
+      {/* Net Worth History Chart */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="h-4 w-4" />
+            Net Worth Over Time
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <NetWorthChart data={netWorthHistory} height={200} />
+        </CardContent>
+      </Card>
 
       {/* Middle section: Allocation chart + Top movers */}
       <div className="grid gap-4 md:grid-cols-2">
