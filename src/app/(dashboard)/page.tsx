@@ -301,7 +301,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Net Worth Hero + Summary cards */}
-      <div className="grid gap-4 grid-cols-1 lg:grid-cols-[1fr_1fr_1fr]">
+      <div className="grid gap-4 grid-cols-1 lg:grid-cols-[2fr_1fr]">
         {/* Net Worth — big card with chart */}
         <Card className="lg:row-span-2">
           <CardHeader className="pb-2">
