@@ -302,15 +302,18 @@ export default function DashboardPage() {
 
       {/* Net Worth Hero + Summary cards */}
       <div className="grid gap-4 grid-cols-1 lg:grid-cols-[1fr_1fr_1fr]">
-        {/* Net Worth — big card */}
+        {/* Net Worth — big card with chart */}
         <Card className="lg:row-span-2">
-          <CardHeader className="pb-3">
+          <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Net Worth</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className={cn("text-3xl font-bold", netWorth >= 0 ? "text-green-500" : "text-red-500")}>
               {fmtHome(netWorth)}
             </div>
+
+            {/* History chart */}
+            <NetWorthChart data={netWorthHistory} height={140} />
 
             {/* Breakdown bar */}
             {totalPositiveAssets > 0 && (
@@ -414,19 +417,6 @@ export default function DashboardPage() {
         </Card>
 
       </div>
-
-      {/* Net Worth History Chart */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2">
-            <TrendingUp className="h-4 w-4" />
-            Net Worth Over Time
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <NetWorthChart data={netWorthHistory} height={200} />
-        </CardContent>
-      </Card>
 
       {/* Middle section: Allocation chart + Top movers */}
       <div className="grid gap-4 md:grid-cols-2">
