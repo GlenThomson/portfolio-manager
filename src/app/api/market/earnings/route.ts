@@ -39,10 +39,10 @@ export async function GET(req: NextRequest) {
       })
     }
 
-    // Default: return next 2 weeks of earnings
+    // Default: return next 7 days of earnings
     const now = new Date()
     const twoWeeks = new Date(now)
-    twoWeeks.setDate(twoWeeks.getDate() + 14)
+    twoWeeks.setDate(twoWeeks.getDate() + 7)
     const defaultFrom = now.toISOString().split("T")[0]
     const defaultTo = twoWeeks.toISOString().split("T")[0]
     const events = await getEarningsCalendar(defaultFrom, defaultTo)

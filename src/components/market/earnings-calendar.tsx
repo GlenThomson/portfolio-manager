@@ -55,7 +55,10 @@ export function EarningsCalendar() {
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data?.events) {
-          setEvents(data.events)
+          const sorted = [...data.events].sort(
+            (a: EarningsEvent, b: EarningsEvent) => a.date.localeCompare(b.date)
+          )
+          setEvents(sorted.slice(0, 50))
         }
       })
       .catch(() => {})
@@ -116,7 +119,7 @@ export function EarningsCalendar() {
               </Link>
             </TableCell>
             <TableCell className="text-muted-foreground">
-              {event.date}
+              {new Date(event.date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
             </TableCell>
             <TableCell className="text-right font-medium">
               {event.epsEstimate !== null
