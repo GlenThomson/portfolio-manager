@@ -4,14 +4,20 @@ import { useEffect, useState, useRef, useCallback, useMemo } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import type { IChartApi, Time } from "lightweight-charts"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { TickerSearch } from "@/components/ui/ticker-search"
 import { Plus, X, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { Quote, OHLC } from "@/types/market"
 
 // ── Constants ─────────────────────────────────────────────
 
-const LINE_COLORS = ["#2962ff", "#26a69a", "#ef5350", "#ff9800"]
+const MAX_SYMBOLS = 10
+
+const LINE_COLORS = [
+  "#2962ff", "#26a69a", "#ef5350", "#ff9800",
+  "#ab47bc", "#42a5f5", "#66bb6a", "#ffa726",
+  "#ec407a", "#78909c",
+]
 
 const CHART_BG = "#131722"
 const GRID_COLOR = "#1e222d"
@@ -137,7 +143,7 @@ export default function ComparePage() {
       .split(",")
       .map((s) => s.trim().toUpperCase())
       .filter(Boolean)
-      .slice(0, 4)
+      .slice(0, MAX_SYMBOLS)
   }, [searchParams])
 
   const [inputValues, setInputValues] = useState<string[]>(() => {
@@ -307,7 +313,7 @@ export default function ComparePage() {
     const syms = inputValues
       .map((s) => s.trim().toUpperCase())
       .filter(Boolean)
-    const unique = Array.from(new Set(syms)).slice(0, 4)
+    const unique = Array.from(new Set(syms)).slice(0, MAX_SYMBOLS)
     if (unique.length === 0) return
     setActiveSymbols(unique)
   }, [inputValues])
@@ -320,8 +326,16 @@ export default function ComparePage() {
     })
   }, [])
 
+  const handleSelectSymbol = useCallback((index: number, symbol: string) => {
+    setInputValues((prev) => {
+      const next = [...prev]
+      next[index] = symbol
+      return next
+    })
+  }, [])
+
   const handleAddField = useCallback(() => {
-    if (inputValues.length >= 4) return
+    if (inputValues.length >= MAX_SYMBOLS) return
     setInputValues((prev) => [...prev, ""])
   }, [inputValues.length])
 
@@ -364,7 +378,7 @@ export default function ComparePage() {
       <div>
         <h1 className="text-xl font-bold">Compare Stocks</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Compare up to 4 stocks side by side with normalized price charts and key metrics.
+          Compare up to {MAX_SYMBOLS} stocks side by side with normalized price charts and key metrics.
         </p>
       </div>
 
@@ -381,12 +395,13 @@ export default function ComparePage() {
                   className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                   style={{ backgroundColor: LINE_COLORS[idx % LINE_COLORS.length] }}
                 />
-                <Input
+                <TickerSearch
                   value={val}
-                  onChange={(e) => handleInputChange(idx, e.target.value)}
+                  onChange={(v) => handleInputChange(idx, v)}
+                  onSelect={(sym) => handleSelectSymbol(idx, sym)}
                   onKeyDown={handleKeyDown}
                   placeholder="SYMBOL"
-                  className="w-28 h-8 text-sm uppercase"
+                  inputClassName="w-28 h-8 text-sm uppercase"
                 />
                 {inputValues.length > 2 && (
                   <button
@@ -401,7 +416,7 @@ export default function ComparePage() {
           </div>
         ))}
 
-        {inputValues.length < 4 && (
+        {inputValues.length < MAX_SYMBOLS && (
           <Button variant="outline" size="sm" onClick={handleAddField} className="h-8">
             <Plus className="h-3.5 w-3.5 mr-1" />
             Add
@@ -418,7 +433,7 @@ export default function ComparePage() {
         <div className="rounded-md overflow-hidden" style={{ background: CHART_BG }}>
           {/* Period selector toolbar */}
           <div
-            className="flex items-center gap-1 px-3 py-1.5 border-b"
+            className="flex items-center gap-1 px-3 py-1.5 border-b flex-wrap"
             style={{ borderColor: BORDER_COLOR }}
           >
             <span className="text-xs font-medium mr-2" style={{ color: TEXT_COLOR }}>
@@ -440,7 +455,7 @@ export default function ComparePage() {
             ))}
 
             {/* Legend */}
-            <div className="flex items-center gap-3 ml-auto">
+            <div className="flex items-center gap-3 ml-auto flex-wrap">
               {activeSymbols.map((sym, idx) => (
                 <div key={sym} className="flex items-center gap-1.5">
                   <div
@@ -482,8 +497,8 @@ export default function ComparePage() {
               <thead>
                 <tr style={{ borderBottom: `1px solid ${BORDER_COLOR}` }}>
                   <th
-                    className="text-left px-4 py-2.5 text-xs font-medium"
-                    style={{ color: TEXT_COLOR }}
+                    className="text-left px-4 py-2.5 text-xs font-medium sticky left-0"
+                    style={{ color: TEXT_COLOR, background: CHART_BG }}
                   >
                     Metric
                   </th>
@@ -508,8 +523,8 @@ export default function ComparePage() {
                       className="hover:bg-[#1e222d] transition-colors"
                     >
                       <td
-                        className="px-4 py-2.5 text-xs"
-                        style={{ color: TEXT_COLOR }}
+                        className="px-4 py-2.5 text-xs sticky left-0"
+                        style={{ color: TEXT_COLOR, background: CHART_BG }}
                       >
                         {row.label}
                       </td>

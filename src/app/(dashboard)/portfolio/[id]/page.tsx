@@ -7,6 +7,7 @@ import { getCurrentUserId } from "@/lib/supabase/user"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { TickerSearch } from "@/components/ui/ticker-search"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import {
   Table,
@@ -388,11 +389,11 @@ export default function PortfolioDetailPage() {
             <form onSubmit={addTransaction} className="space-y-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium">Symbol</label>
-                <Input
-                  placeholder="e.g. AAPL"
+                <TickerSearch
                   value={form.symbol}
-                  onChange={(e) => setForm({ ...form, symbol: e.target.value })}
-                  required
+                  onChange={(v) => setForm({ ...form, symbol: v })}
+                  onSelect={(sym) => setForm({ ...form, symbol: sym })}
+                  placeholder="e.g. AAPL"
                 />
               </div>
               <div className="space-y-2">

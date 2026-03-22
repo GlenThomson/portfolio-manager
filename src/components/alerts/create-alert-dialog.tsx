@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { TickerSearch } from "@/components/ui/ticker-search"
 import {
   Dialog,
   DialogContent,
@@ -94,10 +95,11 @@ export function CreateAlertDialog({ onAlertCreated }: CreateAlertDialogProps) {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <label className="text-sm font-medium">Symbol</label>
-            <Input
-              placeholder="e.g. AAPL"
+            <TickerSearch
               value={symbol}
-              onChange={(e) => setSymbol(e.target.value)}
+              onChange={setSymbol}
+              onSelect={setSymbol}
+              placeholder="e.g. AAPL"
             />
           </div>
 

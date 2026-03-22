@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/client"
 import { getCurrentUserId } from "@/lib/supabase/user"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { TickerSearch } from "@/components/ui/ticker-search"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import dynamic from "next/dynamic"
 
@@ -98,11 +98,14 @@ export default function WatchlistPage() {
               <DialogTitle>Add to Watchlist</DialogTitle>
             </DialogHeader>
             <form onSubmit={addSymbol} className="space-y-4">
-              <Input
-                placeholder="e.g. AAPL, MSFT, GOOGL"
+              <TickerSearch
                 value={newSymbol}
-                onChange={(e) => setNewSymbol(e.target.value)}
-                required
+                onChange={setNewSymbol}
+                onSelect={(sym) => {
+                  setNewSymbol(sym)
+                }}
+                placeholder="e.g. AAPL, MSFT, GOOGL"
+                autoFocus
               />
               <Button type="submit" className="w-full">Add</Button>
             </form>
