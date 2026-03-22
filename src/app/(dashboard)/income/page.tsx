@@ -20,7 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { DollarSign, TrendingUp, BarChart3, Plus, Trash2, RefreshCw, X } from "lucide-react"
+import { DollarSign, TrendingUp, BarChart3, Plus, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useCurrency } from "@/hooks/useCurrency"
 
@@ -91,8 +91,6 @@ export default function IncomePage() {
   const [incomeEntries, setIncomeEntries] = useState<IncomeEntry[]>([])
   const [portfolios, setPortfolios] = useState<PortfolioInfo[]>([])
   const [loading, setLoading] = useState(true)
-  const [syncing, setSyncing] = useState(false)
-  const [syncMessage, setSyncMessage] = useState("")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [activeFilter, setActiveFilter] = useState<string>("all")
   const { fmtLocal } = useCurrency()
@@ -194,22 +192,6 @@ export default function IncomePage() {
     }
   }
 
-  const handleBankSync = async () => {
-    setSyncing(true)
-    try {
-      const res = await fetch("/api/brokers/akahu/sync-bank", { method: "POST" })
-      if (res.ok) {
-        const result = await res.json()
-        setSyncMessage(`Synced: ${result.balancesUpdated} bank balance${result.balancesUpdated !== 1 ? "s" : ""} updated.`)
-      } else {
-        const err = await res.json()
-        setSyncMessage(`Error: ${err.error}`)
-      }
-    } catch {
-      setSyncMessage("Error: Network error")
-    }
-    setSyncing(false)
-  }
 
   const portfolioMap: Record<string, string> = {}
   portfolios.forEach((p) => { portfolioMap[p.id] = p.name })
@@ -236,30 +218,11 @@ export default function IncomePage() {
             All income sources — dividends, salary, rental, and more.
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={handleBankSync} disabled={syncing}>
-            <RefreshCw className={cn("mr-2 h-4 w-4", syncing && "animate-spin")} />
-            {syncing ? "Syncing..." : "Sync Bank"}
-          </Button>
-          <Button onClick={() => setDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Income
-          </Button>
-        </div>
+        <Button onClick={() => setDialogOpen(true)}>
+          <Plus className="mr-2 h-4 w-4" />
+          Add Income
+        </Button>
       </div>
-
-      {/* Sync status message */}
-      {syncMessage && (
-        <div className={cn(
-          "flex items-center justify-between px-4 py-2 rounded-md text-sm",
-          syncMessage.startsWith("Error") ? "bg-red-500/10 text-red-400" : "bg-green-500/10 text-green-400"
-        )}>
-          <span>{syncMessage}</span>
-          <button onClick={() => setSyncMessage("")} className="text-muted-foreground hover:text-foreground">
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
 
       {/* Summary cards */}
       <div className="grid gap-4 md:grid-cols-3">
