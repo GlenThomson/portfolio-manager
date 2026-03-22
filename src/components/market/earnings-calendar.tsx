@@ -39,7 +39,7 @@ function formatHour(hour: string): string {
 }
 
 function formatRevenue(n: number | null): string {
-  if (n === null) return "--"
+  if (n === null || n === 0) return "--"
   if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(1)}B`
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
   return `$${n.toLocaleString()}`
@@ -55,7 +55,11 @@ export function EarningsCalendar() {
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data?.events) {
-          const sorted = [...data.events].sort(
+          // Filter out micro caps with no analyst coverage
+          const covered = data.events.filter(
+            (e: EarningsEvent) => e.epsEstimate !== null || (e.revenueEstimate !== null && e.revenueEstimate > 0)
+          )
+          const sorted = covered.sort(
             (a: EarningsEvent, b: EarningsEvent) => a.date.localeCompare(b.date)
           )
           setEvents(sorted.slice(0, 50))
