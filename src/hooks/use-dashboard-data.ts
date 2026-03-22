@@ -35,6 +35,13 @@ interface Transaction {
   portfolio_id: string
 }
 
+interface AssetItem {
+  id: string
+  name: string
+  type: string
+  value: number
+}
+
 interface MarketNewsItem {
   title: string
   publisher: string
@@ -49,23 +56,31 @@ export interface DashboardData {
   quotes: Record<string, { price: number; change: number; changePct: number }>
   watchlistQuotes: WatchlistQuote[]
   transactions: Transaction[]
+  assets: AssetItem[]
 }
 
 async function fetchDashboardData(): Promise<DashboardData> {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { portfolios: [], positions: [], quotes: {}, watchlistQuotes: [], transactions: [] }
+  if (!user) return { portfolios: [], positions: [], quotes: {}, watchlistQuotes: [], transactions: [], assets: [] }
 
-  const [portfolioRes, positionsRes, watchlistRes, transactionsRes] = await Promise.all([
+  const [portfolioRes, positionsRes, watchlistRes, transactionsRes, assetsRes] = await Promise.all([
     supabase.from("portfolios").select("id, name, is_paper").eq("user_id", user.id).order("created_at", { ascending: false }),
     supabase.from("portfolio_positions").select("symbol, quantity, average_cost, portfolio_id, asset_type").eq("user_id", user.id).is("closed_at", null),
     supabase.from("watchlists").select("symbols").eq("user_id", user.id).limit(1).single(),
     supabase.from("transactions").select("id, symbol, action, quantity, price, executed_at, portfolio_id").eq("user_id", user.id).order("executed_at", { ascending: false }).limit(5),
+    supabase.from("assets").select("id, name, type, value").eq("user_id", user.id),
   ])
 
   const portfolios = portfolioRes.data ?? []
   const positions = positionsRes.data ?? []
   const transactions = transactionsRes.data ?? []
+  const assets: AssetItem[] = (assetsRes.data ?? []).map((a: { id: string; name: string; type: string; value: number }) => ({
+    id: a.id,
+    name: a.name,
+    type: a.type,
+    value: Number(a.value),
+  }))
 
   const stockPositions = positions.filter((p: { asset_type?: string }) => p.asset_type !== "cash")
   const posSymbols = Array.from(new Set(stockPositions.map((p) => p.symbol)))
@@ -104,7 +119,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
     } catch {}
   }
 
-  return { portfolios, positions, quotes, watchlistQuotes, transactions }
+  return { portfolios, positions, quotes, watchlistQuotes, transactions, assets }
 }
 
 export function useDashboardData() {
