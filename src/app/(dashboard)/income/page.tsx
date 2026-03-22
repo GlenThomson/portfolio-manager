@@ -20,7 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { DollarSign, TrendingUp, BarChart3, Plus, Trash2, RefreshCw, Inbox, Check, X } from "lucide-react"
+import { DollarSign, TrendingUp, BarChart3, Plus, Trash2, RefreshCw, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useCurrency } from "@/hooks/useCurrency"
 
@@ -45,9 +45,6 @@ interface IncomeEntry {
   recurring: boolean
   frequency: string | null
   notes: string | null
-  origin: string
-  bank_ref: string | null
-  needs_review: boolean
 }
 
 interface PortfolioInfo {
@@ -62,9 +59,7 @@ interface IncomeItem {
   source: string
   category: string
   amount: number
-  origin: "dividend" | "manual" | "bank"
-  needsReview?: boolean
-  notes?: string | null
+  origin: "dividend" | "manual"
 }
 
 const CATEGORIES = [
@@ -144,9 +139,7 @@ export default function IncomePage() {
       source: e.source,
       category: e.category,
       amount: Number(e.amount),
-      origin: (e.origin === "bank" ? "bank" : "manual") as "bank" | "manual",
-      needsReview: e.needs_review,
-      notes: e.notes,
+      origin: "manual" as const,
     })),
   ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 
@@ -207,10 +200,7 @@ export default function IncomePage() {
       const res = await fetch("/api/brokers/akahu/sync-bank", { method: "POST" })
       if (res.ok) {
         const result = await res.json()
-        setSyncMessage(
-          `Synced: ${result.incomeImported} income entries, ${result.balancesUpdated} balances updated.${result.needsReview > 0 ? ` ${result.needsReview} need review.` : ""}`
-        )
-        fetchData()
+        setSyncMessage(`Synced: ${result.balancesUpdated} bank balance${result.balancesUpdated !== 1 ? "s" : ""} updated.`)
       } else {
         const err = await res.json()
         setSyncMessage(`Error: ${err.error}`)
@@ -220,52 +210,6 @@ export default function IncomePage() {
     }
     setSyncing(false)
   }
-
-  const handleCategorise = async (id: string, category: string, source: string) => {
-    const res = await fetch("/api/income", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, category, source }),
-    })
-    if (res.ok) {
-      // Also create a rule so future transactions auto-categorise
-      const entry = incomeEntries.find((e) => e.id === id)
-      if (entry?.notes) {
-        // Generate pattern from original description
-        const pattern = entry.notes
-          .replace(/\d{2}\/\d{2}\/\d{2,4}/g, "")
-          .replace(/\d{4,}/g, "")
-          .replace(/\s+/g, " ")
-          .trim()
-          .toLowerCase()
-        if (pattern.length > 2) {
-          await fetch("/api/income/rules", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ match_pattern: pattern, category, source_label: source }),
-          })
-        }
-      }
-      setIncomeEntries((prev) =>
-        prev.map((e) => e.id === id ? { ...e, category, needs_review: false, source } : e)
-      )
-    }
-  }
-
-  const handleDismissReview = async (id: string) => {
-    // Mark as reviewed without changing category
-    await fetch("/api/income", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, category: incomeEntries.find((e) => e.id === id)?.category ?? "other" }),
-    })
-    setIncomeEntries((prev) =>
-      prev.map((e) => e.id === id ? { ...e, needs_review: false } : e)
-    )
-  }
-
-  // Items needing review
-  const reviewItems = allIncome.filter((i) => i.needsReview)
 
   const portfolioMap: Record<string, string> = {}
   portfolios.forEach((p) => { portfolioMap[p.id] = p.name })
@@ -379,73 +323,6 @@ export default function IncomePage() {
             </div>
           ))}
         </div>
-      )}
-
-      {/* Review inbox */}
-      {reviewItems.length > 0 && (
-        <Card className="border-yellow-500/30">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Inbox className="h-4 w-4 text-yellow-500" />
-              Needs Review ({reviewItems.length})
-            </CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Categorise these transactions. Your choice will be remembered for future imports.
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {reviewItems.slice(0, 10).map((item) => (
-              <div
-                key={`review-${item.id}`}
-                className="flex items-center gap-3 p-3 rounded-md bg-muted/50"
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{item.source}</p>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span>{new Date(item.date).toLocaleDateString()}</span>
-                    <span className="text-green-500 font-medium">{fmtLocal(item.amount)}</span>
-                    {item.notes && <span className="truncate max-w-[200px]">{item.notes}</span>}
-                  </div>
-                </div>
-                <div className="flex gap-1 flex-shrink-0">
-                  {CATEGORIES.filter((c) => c.value !== "dividend").map((c) => (
-                    <button
-                      key={c.value}
-                      onClick={() => handleCategorise(item.id, c.value, item.source)}
-                      className={cn(
-                        "px-2 py-1 text-[10px] rounded-md font-medium transition-colors",
-                        "bg-muted hover:bg-accent text-muted-foreground border border-transparent",
-                        item.category === c.value && "border-primary/30 text-primary"
-                      )}
-                      title={c.label}
-                    >
-                      {c.label}
-                    </button>
-                  ))}
-                  <button
-                    onClick={() => handleDismissReview(item.id)}
-                    className="px-1.5 py-1 text-muted-foreground hover:text-foreground transition-colors"
-                    title="Accept current category"
-                  >
-                    <Check className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    onClick={() => handleDeleteIncome(item.id)}
-                    className="px-1.5 py-1 text-muted-foreground hover:text-red-500 transition-colors"
-                    title="Remove"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-            ))}
-            {reviewItems.length > 10 && (
-              <p className="text-xs text-muted-foreground text-center pt-2">
-                And {reviewItems.length - 10} more...
-              </p>
-            )}
-          </CardContent>
-        </Card>
       )}
 
       {/* Monthly bar chart — stacked by category */}
@@ -565,23 +442,16 @@ export default function IncomePage() {
                         {fmtLocal(item.amount)}
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-1">
-                          {item.origin === "bank" && (
-                            <Badge variant="outline" className="text-[9px] px-1 py-0 border-blue-500/30 text-blue-400">
-                              Bank
-                            </Badge>
-                          )}
-                          {item.origin !== "dividend" && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-red-500 hover:text-red-400"
-                              onClick={() => handleDeleteIncome(item.id)}
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          )}
-                        </div>
+                        {item.origin !== "dividend" && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-red-500 hover:text-red-400"
+                            onClick={() => handleDeleteIncome(item.id)}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   )
