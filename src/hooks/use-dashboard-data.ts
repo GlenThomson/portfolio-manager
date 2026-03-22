@@ -40,6 +40,7 @@ interface AssetItem {
   name: string
   type: string
   value: number
+  currency: string
 }
 
 interface MarketNewsItem {
@@ -69,17 +70,18 @@ async function fetchDashboardData(): Promise<DashboardData> {
     supabase.from("portfolio_positions").select("symbol, quantity, average_cost, portfolio_id, asset_type").eq("user_id", user.id).is("closed_at", null),
     supabase.from("watchlists").select("symbols").eq("user_id", user.id).limit(1).single(),
     supabase.from("transactions").select("id, symbol, action, quantity, price, executed_at, portfolio_id").eq("user_id", user.id).order("executed_at", { ascending: false }).limit(5),
-    supabase.from("assets").select("id, name, type, value").eq("user_id", user.id),
+    supabase.from("assets").select("id, name, type, value, currency").eq("user_id", user.id),
   ])
 
   const portfolios = portfolioRes.data ?? []
   const positions = positionsRes.data ?? []
   const transactions = transactionsRes.data ?? []
-  const assets: AssetItem[] = (assetsRes.data ?? []).map((a: { id: string; name: string; type: string; value: number }) => ({
+  const assets: AssetItem[] = (assetsRes.data ?? []).map((a: { id: string; name: string; type: string; value: number; currency: string }) => ({
     id: a.id,
     name: a.name,
     type: a.type,
     value: Number(a.value),
+    currency: a.currency ?? "NZD",
   }))
 
   const stockPositions = positions.filter((p: { asset_type?: string }) => p.asset_type !== "cash")

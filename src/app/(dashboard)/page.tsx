@@ -37,7 +37,7 @@ interface TopMover {
 export default function DashboardPage() {
   const { data, isLoading } = useDashboardData()
   const { data: marketNews = [] } = useMarketNews()
-  const { fmtNative, fmtHome } = useCurrency()
+  const { fmtNative, fmtHome, homeCurrency, fxRate } = useCurrency()
   const snapshotRecorded = useRef(false)
 
   // Fetch net worth history
@@ -83,12 +83,20 @@ export default function DashboardPage() {
   const totalPnl = totalValue - totalCost
   const totalPnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0
 
+  // Convert asset value to USD (fmtHome expects USD input)
+  function assetValueInUsd(asset: { value: number; currency: string }): number {
+    if (asset.currency === "USD") return asset.value
+    if (asset.currency === homeCurrency && fxRate > 0) return asset.value / fxRate
+    // For other currencies we don't have the rate, treat as home currency
+    return fxRate > 0 ? asset.value / fxRate : asset.value
+  }
+
   // Net worth calculations
   const LIABILITY_TYPES = new Set(["mortgage", "loan", "credit-card", "other-liability"])
   const otherAssets = assets.filter((a) => !LIABILITY_TYPES.has(a.type))
   const liabilities = assets.filter((a) => LIABILITY_TYPES.has(a.type))
-  const totalOtherAssets = otherAssets.reduce((sum, a) => sum + a.value, 0)
-  const totalLiabilities = liabilities.reduce((sum, a) => sum + a.value, 0)
+  const totalOtherAssets = otherAssets.reduce((sum, a) => sum + assetValueInUsd(a), 0)
+  const totalLiabilities = liabilities.reduce((sum, a) => sum + assetValueInUsd(a), 0)
   const netWorth = totalValue + totalCash + totalOtherAssets - totalLiabilities
 
   // Record daily snapshot
@@ -129,7 +137,7 @@ export default function DashboardPage() {
   }
   const typeGroups: Record<string, number> = {}
   for (const a of otherAssets) {
-    typeGroups[a.type] = (typeGroups[a.type] ?? 0) + a.value
+    typeGroups[a.type] = (typeGroups[a.type] ?? 0) + assetValueInUsd(a)
   }
   for (const [type, total] of Object.entries(typeGroups)) {
     if (total > 0) assetsByType.push({ type, total, color: typeColors[type] ?? "bg-gray-400" })

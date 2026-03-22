@@ -114,7 +114,14 @@ export default function InvestmentsPage() {
   const [assetDialogOpen, setAssetDialogOpen] = useState(false)
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null)
   const [loading, setLoading] = useState(true)
-  const { fmtHome } = useCurrency()
+  const { fmtHome, homeCurrency, fxRate } = useCurrency()
+
+  // Convert asset value to USD (fmtHome expects USD input)
+  function assetToUsd(a: { value: number; currency: string }): number {
+    if (a.currency === "USD") return a.value
+    if (a.currency === homeCurrency && fxRate > 0) return a.value / fxRate
+    return fxRate > 0 ? a.value / fxRate : a.value
+  }
 
   const fetchData = useCallback(async () => {
     const supabase = createClient()
@@ -396,7 +403,7 @@ export default function InvestmentsPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold text-green-500">
-                    {fmtHome(assets.filter((a) => !isLiability(a.type)).reduce((s, a) => s + Number(a.value), 0))}
+                    {fmtHome(assets.filter((a) => !isLiability(a.type)).reduce((s, a) => s + assetToUsd(a), 0))}
                   </div>
                 </CardContent>
               </Card>
@@ -407,7 +414,7 @@ export default function InvestmentsPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold text-red-500">
-                    {fmtHome(assets.filter((a) => isLiability(a.type)).reduce((s, a) => s + Number(a.value), 0))}
+                    {fmtHome(assets.filter((a) => isLiability(a.type)).reduce((s, a) => s + assetToUsd(a), 0))}
                   </div>
                 </CardContent>
               </Card>
@@ -419,8 +426,8 @@ export default function InvestmentsPage() {
                 <CardContent>
                   <div className="text-2xl font-bold">
                     {fmtHome(
-                      assets.filter((a) => !isLiability(a.type)).reduce((s, a) => s + Number(a.value), 0) -
-                      assets.filter((a) => isLiability(a.type)).reduce((s, a) => s + Number(a.value), 0)
+                      assets.filter((a) => !isLiability(a.type)).reduce((s, a) => s + assetToUsd(a), 0) -
+                      assets.filter((a) => isLiability(a.type)).reduce((s, a) => s + assetToUsd(a), 0)
                     )}
                   </div>
                 </CardContent>
@@ -448,8 +455,8 @@ export default function InvestmentsPage() {
                       const config = getTypeConfig(a.type)
                       const Icon = config.icon
                       const isLiab = isLiability(a.type)
-                      const val = Number(a.value)
-                      const purchasePrice = a.purchase_price ? Number(a.purchase_price) : null
+                      const val = assetToUsd(a)
+                      const purchasePrice = a.purchase_price ? assetToUsd({ value: Number(a.purchase_price), currency: a.currency }) : null
                       const gain = purchasePrice ? val - purchasePrice : null
 
                       return (
