@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { useQueryClient } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
 import { getCurrentUserId } from "@/lib/supabase/user"
@@ -15,7 +16,7 @@ const MiniSparkline = dynamic(
   () => import("@/components/charts/mini-sparkline").then((m) => ({ default: m.MiniSparkline })),
   { ssr: false }
 )
-import { Plus, Star, TrendingUp, TrendingDown, X, Loader2 } from "lucide-react"
+import { Plus, Star, TrendingUp, TrendingDown, X, Loader2, BarChart3 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useCurrency } from "@/hooks/useCurrency"
 import { useWatchlistMeta, useWatchlistQuotes, fetchSingleQuote } from "@/hooks/use-watchlist-data"
@@ -24,8 +25,10 @@ import type { WatchlistItem } from "@/hooks/use-watchlist-data"
 export default function WatchlistPage() {
   const [newSymbol, setNewSymbol] = useState("")
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
   const { fmtNative } = useCurrency()
   const queryClient = useQueryClient()
+  const router = useRouter()
 
   const { data: meta, isLoading } = useWatchlistMeta()
   const watchlistId = meta?.id ?? null
@@ -114,13 +117,23 @@ export default function WatchlistPage() {
           <h1 className="text-2xl font-bold tracking-tight">Watchlist</h1>
           <p className="text-muted-foreground">Track stocks you&apos;re interested in</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Symbol
+        <div className="flex items-center gap-2">
+          {selected.size >= 2 && (
+            <Button
+              variant="outline"
+              onClick={() => router.push(`/compare?symbols=${Array.from(selected).join(",")}`)}
+            >
+              <BarChart3 className="mr-2 h-4 w-4" />
+              Compare ({selected.size})
             </Button>
-          </DialogTrigger>
+          )}
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Symbol
+              </Button>
+            </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Add to Watchlist</DialogTitle>
@@ -138,6 +151,7 @@ export default function WatchlistPage() {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {symbols.length === 0 ? (
@@ -166,6 +180,26 @@ export default function WatchlistPage() {
             return (
               <Card key={symbol} className="hover:bg-accent/30 transition-colors">
                 <CardContent className="flex items-center gap-4 py-3 px-4">
+                  <button
+                    onClick={() => setSelected((prev) => {
+                      const next = new Set(prev)
+                      if (next.has(symbol)) next.delete(symbol)
+                      else next.add(symbol)
+                      return next
+                    })}
+                    className={cn(
+                      "h-5 w-5 rounded border flex-shrink-0 flex items-center justify-center transition-colors",
+                      selected.has(symbol)
+                        ? "bg-primary border-primary text-primary-foreground"
+                        : "border-muted-foreground/30 hover:border-muted-foreground"
+                    )}
+                  >
+                    {selected.has(symbol) && (
+                      <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </button>
                   <Link href={`/stock/${symbol}`} className="flex-1 flex items-center gap-4">
                     <div className="min-w-[100px]">
                       <p className="font-bold text-primary">{symbol}</p>

@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Briefcase, TrendingUp, TrendingDown, DollarSign, Plus, ArrowRight, Star, Activity, ArrowUpDown, Receipt, Newspaper, ExternalLink, Landmark } from "lucide-react"
+import { Briefcase, TrendingUp, TrendingDown, DollarSign, Plus, ArrowRight, Star, Activity, ArrowUpDown, Receipt, Newspaper, ExternalLink, Home, Car, Wallet, Bitcoin, PiggyBank, Package, Building2, Banknote, CreditCard } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { AllocationChart } from "@/components/dashboard/allocation-chart"
 import { useCurrency } from "@/hooks/useCurrency"
@@ -70,7 +70,37 @@ export default function DashboardPage() {
   const totalOtherAssets = otherAssets.reduce((sum, a) => sum + a.value, 0)
   const totalLiabilities = liabilities.reduce((sum, a) => sum + a.value, 0)
   const netWorth = totalValue + totalCash + totalOtherAssets - totalLiabilities
-  const hasAssets = assets.length > 0
+
+  // Net worth breakdown segments
+  const ASSET_TYPE_ICONS: Record<string, typeof Home> = {
+    property: Home, vehicle: Car, cash: Wallet, crypto: Bitcoin,
+    kiwisaver: PiggyBank, "other-asset": Package,
+    mortgage: Building2, loan: Banknote, "credit-card": CreditCard, "other-liability": Banknote,
+  }
+  const ASSET_TYPE_LABELS: Record<string, string> = {
+    property: "Property", vehicle: "Vehicle", cash: "Savings", crypto: "Crypto",
+    kiwisaver: "KiwiSaver", "other-asset": "Other",
+    mortgage: "Mortgage", loan: "Loan", "credit-card": "Credit Card", "other-liability": "Other Debt",
+  }
+
+  // Group other assets by type for breakdown
+  const assetsByType: { type: string; total: number; color: string }[] = []
+  const typeColors: Record<string, string> = {
+    property: "bg-blue-500", vehicle: "bg-cyan-500", cash: "bg-emerald-500",
+    crypto: "bg-orange-500", kiwisaver: "bg-purple-500", "other-asset": "bg-gray-400",
+  }
+  const typeGroups: Record<string, number> = {}
+  for (const a of otherAssets) {
+    typeGroups[a.type] = (typeGroups[a.type] ?? 0) + a.value
+  }
+  for (const [type, total] of Object.entries(typeGroups)) {
+    if (total > 0) assetsByType.push({ type, total, color: typeColors[type] ?? "bg-gray-400" })
+  }
+  // Add investments as a segment
+  if (totalValue > 0) assetsByType.unshift({ type: "investments", total: totalValue, color: "bg-green-500" })
+  if (totalCash > 0) assetsByType.push({ type: "investable-cash", total: totalCash, color: "bg-green-300" })
+
+  const totalPositiveAssets = totalValue + totalCash + totalOtherAssets
 
   const dayChange = stockPositions.reduce((sum, p) => {
     const q = quotes[p.symbol]
@@ -228,31 +258,81 @@ export default function DashboardPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
         <p className="text-muted-foreground">
-          Your portfolio overview at a glance.
+          Your financial overview at a glance.
         </p>
       </div>
 
-      {/* Summary cards */}
-      <div className={cn("grid gap-4 grid-cols-1 sm:grid-cols-2", hasAssets ? "lg:grid-cols-5" : "lg:grid-cols-4")}>
-        {hasAssets && (
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Net Worth</CardTitle>
-              <Landmark className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className={cn("text-2xl font-bold", netWorth >= 0 ? "text-green-500" : "text-red-500")}>
-                {fmtHome(netWorth)}
+      {/* Net Worth Hero + Summary cards */}
+      <div className="grid gap-4 grid-cols-1 lg:grid-cols-[1fr_1fr_1fr]">
+        {/* Net Worth — big card */}
+        <Card className="lg:row-span-2">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Net Worth</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className={cn("text-3xl font-bold", netWorth >= 0 ? "text-green-500" : "text-red-500")}>
+              {fmtHome(netWorth)}
+            </div>
+
+            {/* Breakdown bar */}
+            {totalPositiveAssets > 0 && (
+              <div className="space-y-3">
+                <div className="flex h-3 rounded-full overflow-hidden bg-muted">
+                  {assetsByType.map((seg, i) => {
+                    const pct = (seg.total / totalPositiveAssets) * 100
+                    if (pct < 0.5) return null
+                    return (
+                      <div
+                        key={i}
+                        className={cn("h-full", seg.color)}
+                        style={{ width: `${pct}%` }}
+                      />
+                    )
+                  })}
+                </div>
+
+                {/* Legend */}
+                <div className="space-y-1.5">
+                  {assetsByType.map((seg, i) => {
+                    const label = seg.type === "investments" ? "Investments" : seg.type === "investable-cash" ? "Trading Cash" : (ASSET_TYPE_LABELS[seg.type] ?? seg.type)
+                    const Icon = seg.type === "investments" ? Briefcase : seg.type === "investable-cash" ? Wallet : (ASSET_TYPE_ICONS[seg.type] ?? Package)
+                    return (
+                      <div key={i} className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2">
+                          <div className={cn("w-2 h-2 rounded-full", seg.color)} />
+                          <Icon className="h-3 w-3 text-muted-foreground" />
+                          <span>{label}</span>
+                        </div>
+                        <span className="font-medium">{fmtHome(seg.total)}</span>
+                      </div>
+                    )
+                  })}
+                  {totalLiabilities > 0 && (
+                    <div className="flex items-center justify-between text-xs pt-1 border-t">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-red-500" />
+                        <Building2 className="h-3 w-3 text-muted-foreground" />
+                        <span>Debt</span>
+                      </div>
+                      <span className="font-medium text-red-500">-{fmtHome(totalLiabilities)}</span>
+                    </div>
+                  )}
+                </div>
               </div>
-              <Link href="/assets" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-                View breakdown
-              </Link>
-            </CardContent>
-          </Card>
-        )}
+            )}
+
+            {totalPositiveAssets === 0 && (
+              <p className="text-xs text-muted-foreground">
+                Add investments or assets to see your net worth breakdown.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Investments value */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">{hasAssets ? "Portfolio" : "Total Value"}</CardTitle>
+            <CardTitle className="text-sm font-medium">Investments</CardTitle>
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -260,11 +340,12 @@ export default function DashboardPage() {
               {fmtHome(totalValue)}
             </div>
             <p className="text-xs text-muted-foreground">
-              {positions.length > 0 ? `Across ${portfolios.length} portfolio${portfolios.length !== 1 ? "s" : ""}` : "Add positions to get started"}
+              {stockPositions.length} position{stockPositions.length !== 1 ? "s" : ""} across {portfolios.length} portfolio{portfolios.length !== 1 ? "s" : ""}
             </p>
           </CardContent>
         </Card>
 
+        {/* Day Change */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Day Change</CardTitle>
@@ -284,6 +365,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
+        {/* Total P&L */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total P&L</CardTitle>
@@ -303,6 +385,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
+        {/* Positions */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Positions</CardTitle>

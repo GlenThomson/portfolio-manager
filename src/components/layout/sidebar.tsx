@@ -8,13 +8,11 @@ import {
   Briefcase,
   Star,
   BarChart3,
-  GitCompareArrows,
   MessageSquare,
   Bell,
   Settings,
   TrendingUp,
   DollarSign,
-  Landmark,
   MessageCircleWarning,
 } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -22,12 +20,10 @@ import { Separator } from "@/components/ui/separator"
 
 const navItems = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
-  { label: "Portfolio", href: "/portfolio", icon: Briefcase },
+  { label: "Investments", href: "/portfolio", icon: Briefcase },
   { label: "Watchlist", href: "/watchlist", icon: Star },
   { label: "Markets", href: "/markets", icon: BarChart3 },
-  { label: "Net Worth", href: "/assets", icon: Landmark },
   { label: "Income", href: "/income", icon: DollarSign },
-  { label: "Compare", href: "/compare", icon: GitCompareArrows },
   { label: "AI Chat", href: "/chat", icon: MessageSquare },
 ]
 

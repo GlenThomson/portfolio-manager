@@ -15,7 +15,8 @@ import { StockScore } from "@/components/market/stock-score"
 import { StockNews } from "@/components/market/stock-news"
 import { OptionsChain } from "@/components/market/options-chain"
 import { Button } from "@/components/ui/button"
-import { Star, Plus, Loader2 } from "lucide-react"
+import { Star, Plus, Loader2, BarChart3 } from "lucide-react"
+import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { getCurrentUserId } from "@/lib/supabase/user"
 import { cn } from "@/lib/utils"
@@ -248,6 +249,7 @@ export default function StockDetailPage() {
     }
   }
 
+  const router = useRouter()
   const { fmtNative } = useCurrency()
   const isPositive = (quote?.regularMarketChange ?? 0) >= 0
 
@@ -279,7 +281,15 @@ export default function StockDetailPage() {
           </div>
         )}
 
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => router.push(`/compare?symbols=${symbol}`)}
+          >
+            <BarChart3 className="mr-1 h-3.5 w-3.5" />
+            Compare
+          </Button>
           <Button
             variant={inWatchlist ? "secondary" : "outline"}
             size="sm"
