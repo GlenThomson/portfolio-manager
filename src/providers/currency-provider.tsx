@@ -33,6 +33,7 @@ interface CurrencyContextValue {
   fxRate: number
   fmtNative: (price: number, stockCurrency?: string) => string
   fmtHome: (usdAmount: number) => string
+  fmtLocal: (amount: number) => string
   fmtBoth: (usdAmount: number) => string
   loading: boolean
 }
@@ -42,6 +43,7 @@ const CurrencyContext = createContext<CurrencyContextValue>({
   fxRate: 1,
   fmtNative: (price: number) => formatAmount(price, "USD"),
   fmtHome: (usdAmount: number) => formatAmount(usdAmount, "USD"),
+  fmtLocal: (amount: number) => formatAmount(amount, "USD"),
   fmtBoth: (usdAmount: number) => formatAmount(usdAmount, "USD"),
   loading: true,
 })
@@ -110,6 +112,14 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
     [fxRate, homeCurrency]
   )
 
+  /** Format a value already in the user's home currency (no conversion) */
+  const fmtLocal = useCallback(
+    (amount: number): string => {
+      return formatAmount(amount, homeCurrency)
+    },
+    [homeCurrency]
+  )
+
   const fmtBoth = useCallback(
     (usdAmount: number): string => {
       if (homeCurrency === "USD" || fxRate === 1) {
@@ -121,8 +131,8 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
   )
 
   const value = useMemo(
-    () => ({ homeCurrency, fxRate, fmtNative, fmtHome, fmtBoth, loading }),
-    [homeCurrency, fxRate, fmtNative, fmtHome, fmtBoth, loading]
+    () => ({ homeCurrency, fxRate, fmtNative, fmtHome, fmtLocal, fmtBoth, loading }),
+    [homeCurrency, fxRate, fmtNative, fmtHome, fmtLocal, fmtBoth, loading]
   )
 
   return (

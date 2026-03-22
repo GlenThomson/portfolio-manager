@@ -100,7 +100,7 @@ export default function IncomePage() {
   const [syncMessage, setSyncMessage] = useState("")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [activeFilter, setActiveFilter] = useState<string>("all")
-  const { fmtNative, fmtHome } = useCurrency()
+  const { fmtLocal } = useCurrency()
 
   const fetchData = useCallback(async () => {
     const supabase = createClient()
@@ -326,7 +326,7 @@ export default function IncomePage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-500">
-              {fmtHome(totalIncomeYTD)}
+              {fmtLocal(totalIncomeYTD)}
             </div>
             <p className="text-xs text-muted-foreground">{currentYear}</p>
           </CardContent>
@@ -339,7 +339,7 @@ export default function IncomePage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {fmtHome(monthlyAverage)}
+              {fmtLocal(monthlyAverage)}
             </div>
             <p className="text-xs text-muted-foreground">Per month this year</p>
           </CardContent>
@@ -355,7 +355,7 @@ export default function IncomePage() {
               <>
                 <div className="text-2xl font-bold">{topSource[0]}</div>
                 <p className="text-xs text-muted-foreground">
-                  {fmtHome(topSource[1])} total
+                  {fmtLocal(topSource[1])} total
                 </p>
               </>
             ) : (
@@ -375,7 +375,7 @@ export default function IncomePage() {
             >
               <div className={cn("w-2 h-2 rounded-full", CATEGORY_COLORS[c.value])} />
               <span className="font-medium">{c.label}</span>
-              <span className="text-muted-foreground">{fmtHome(categoryTotals[c.value])}</span>
+              <span className="text-muted-foreground">{fmtLocal(categoryTotals[c.value])}</span>
             </div>
           ))}
         </div>
@@ -403,7 +403,7 @@ export default function IncomePage() {
                   <p className="text-sm font-medium truncate">{item.source}</p>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <span>{new Date(item.date).toLocaleDateString()}</span>
-                    <span className="text-green-500 font-medium">{fmtHome(item.amount)}</span>
+                    <span className="text-green-500 font-medium">{fmtLocal(item.amount)}</span>
                     {item.notes && <span className="truncate max-w-[200px]">{item.notes}</span>}
                   </div>
                 </div>
@@ -465,7 +465,7 @@ export default function IncomePage() {
                 return (
                   <div key={i} className="flex-1 flex flex-col items-center gap-1">
                     <span className="text-[10px] text-muted-foreground">
-                      {total > 0 ? fmtHome(total) : ""}
+                      {total > 0 ? fmtLocal(total) : ""}
                     </span>
                     <div className="w-full flex items-end" style={{ height: "160px" }}>
                       <svg width="100%" height="160" className="overflow-visible">
@@ -562,7 +562,7 @@ export default function IncomePage() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right text-green-500">
-                        {fmtHome(item.amount)}
+                        {fmtLocal(item.amount)}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">

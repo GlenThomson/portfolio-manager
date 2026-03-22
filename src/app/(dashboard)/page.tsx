@@ -37,7 +37,7 @@ interface TopMover {
 export default function DashboardPage() {
   const { data, isLoading } = useDashboardData()
   const { data: marketNews = [] } = useMarketNews()
-  const { fmtNative, fmtHome, homeCurrency, fxRate } = useCurrency()
+  const { fmtNative, fmtHome, fmtLocal, homeCurrency, fxRate } = useCurrency()
   const snapshotRecorded = useRef(false)
 
   // Fetch net worth history
@@ -83,39 +83,43 @@ export default function DashboardPage() {
   const totalPnl = totalValue - totalCost
   const totalPnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0
 
-  // Convert asset value to USD (fmtHome expects USD input)
-  function assetValueInUsd(asset: { value: number; currency: string }): number {
-    if (asset.currency === "USD") return asset.value
-    if (asset.currency === homeCurrency && fxRate > 0) return asset.value / fxRate
-    // For other currencies we don't have the rate, treat as home currency
-    return fxRate > 0 ? asset.value / fxRate : asset.value
+  // Convert any value to home currency
+  function toHomeCurrency(amount: number, fromCurrency: string): number {
+    if (fromCurrency === homeCurrency) return amount
+    if (fromCurrency === "USD") return amount * fxRate
+    return amount // Unknown currency, assume home
   }
 
-  // Net worth calculations
+  // Convert stock USD values to home currency for net worth
+  const totalValueHome = totalValue * fxRate
+  const totalCostHome = totalCost * fxRate
+  const totalCashHome = totalCash * fxRate
+
+  // Net worth calculations — everything in home currency
   const LIABILITY_TYPES = new Set(["mortgage", "loan", "credit-card", "other-liability"])
   const otherAssets = assets.filter((a) => !LIABILITY_TYPES.has(a.type))
   const liabilities = assets.filter((a) => LIABILITY_TYPES.has(a.type))
-  const totalOtherAssets = otherAssets.reduce((sum, a) => sum + assetValueInUsd(a), 0)
-  const totalLiabilities = liabilities.reduce((sum, a) => sum + assetValueInUsd(a), 0)
-  const netWorth = totalValue + totalCash + totalOtherAssets - totalLiabilities
+  const totalOtherAssets = otherAssets.reduce((sum, a) => sum + toHomeCurrency(a.value, a.currency), 0)
+  const totalLiabilities = liabilities.reduce((sum, a) => sum + toHomeCurrency(a.value, a.currency), 0)
+  const netWorth = totalValueHome + totalCashHome + totalOtherAssets - totalLiabilities
 
   // Record daily snapshot
   useEffect(() => {
     if (snapshotRecorded.current || isLoading || !data) return
-    if (totalValue === 0 && totalCash === 0 && totalOtherAssets === 0) return
+    if (totalValueHome === 0 && totalCashHome === 0 && totalOtherAssets === 0) return
     snapshotRecorded.current = true
     fetch("/api/net-worth", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        total_investments: totalValue,
-        total_cash: totalCash,
+        total_investments: totalValueHome,
+        total_cash: totalCashHome,
         total_other_assets: totalOtherAssets,
         total_liabilities: totalLiabilities,
         net_worth: netWorth,
       }),
     }).catch(() => {})
-  }, [isLoading, data, totalValue, totalCash, totalOtherAssets, totalLiabilities, netWorth])
+  }, [isLoading, data, totalValueHome, totalCashHome, totalOtherAssets, totalLiabilities, netWorth])
 
   // Net worth breakdown segments
   const ASSET_TYPE_ICONS: Record<string, typeof Home> = {
@@ -137,16 +141,16 @@ export default function DashboardPage() {
   }
   const typeGroups: Record<string, number> = {}
   for (const a of otherAssets) {
-    typeGroups[a.type] = (typeGroups[a.type] ?? 0) + assetValueInUsd(a)
+    typeGroups[a.type] = (typeGroups[a.type] ?? 0) + toHomeCurrency(a.value, a.currency)
   }
   for (const [type, total] of Object.entries(typeGroups)) {
     if (total > 0) assetsByType.push({ type, total, color: typeColors[type] ?? "bg-gray-400" })
   }
-  // Add investments as a segment
-  if (totalValue > 0) assetsByType.unshift({ type: "investments", total: totalValue, color: "bg-green-500" })
-  if (totalCash > 0) assetsByType.push({ type: "investable-cash", total: totalCash, color: "bg-green-300" })
+  // Add investments as a segment (converted to home currency)
+  if (totalValueHome > 0) assetsByType.unshift({ type: "investments", total: totalValueHome, color: "bg-green-500" })
+  if (totalCashHome > 0) assetsByType.push({ type: "investable-cash", total: totalCashHome, color: "bg-green-300" })
 
-  const totalPositiveAssets = totalValue + totalCash + totalOtherAssets
+  const totalPositiveAssets = totalValueHome + totalCashHome + totalOtherAssets
 
   const dayChange = stockPositions.reduce((sum, p) => {
     const q = quotes[p.symbol]
@@ -317,7 +321,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className={cn("text-3xl font-bold", netWorth >= 0 ? "text-green-500" : "text-red-500")}>
-              {fmtHome(netWorth)}
+              {fmtLocal(netWorth)}
             </div>
 
             {/* History chart */}
@@ -352,7 +356,7 @@ export default function DashboardPage() {
                           <Icon className="h-3 w-3 text-muted-foreground" />
                           <span>{label}</span>
                         </div>
-                        <span className="font-medium">{fmtHome(seg.total)}</span>
+                        <span className="font-medium">{fmtLocal(seg.total)}</span>
                       </div>
                     )
                   })}
@@ -363,7 +367,7 @@ export default function DashboardPage() {
                         <Building2 className="h-3 w-3 text-muted-foreground" />
                         <span>Debt</span>
                       </div>
-                      <span className="font-medium text-red-500">-{fmtHome(totalLiabilities)}</span>
+                      <span className="font-medium text-red-500">-{fmtLocal(totalLiabilities)}</span>
                     </div>
                   )}
                 </div>
