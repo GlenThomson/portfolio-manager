@@ -48,6 +48,36 @@ export async function POST(request: NextRequest) {
   return NextResponse.json(data)
 }
 
+export async function PATCH(request: NextRequest) {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+
+  const body = await request.json()
+  const { id, category, source } = body
+
+  if (!id || !category) {
+    return NextResponse.json({ error: "id and category are required" }, { status: 400 })
+  }
+
+  const updates: Record<string, unknown> = {
+    category,
+    needs_review: false,
+  }
+  if (source) updates.source = source
+
+  const { data, error } = await supabase
+    .from("income_entries")
+    .update(updates)
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .select()
+    .single()
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json(data)
+}
+
 export async function DELETE(request: NextRequest) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
