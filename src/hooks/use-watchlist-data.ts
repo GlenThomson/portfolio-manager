@@ -1,9 +1,9 @@
 "use client"
 
-import { useQuery, keepPreviousData } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
 
-interface WatchlistItem {
+export interface WatchlistItem {
   symbol: string
   shortName: string
   price: number
@@ -32,8 +32,8 @@ async function fetchWatchlistMeta(): Promise<WatchlistMeta> {
   return { id: data?.id ?? null, symbols: data?.symbols ?? [] }
 }
 
-async function fetchWatchlistQuotes(symbols: string[]): Promise<WatchlistItem[]> {
-  if (symbols.length === 0) return []
+async function fetchWatchlistQuotes(symbols: string[]): Promise<Record<string, WatchlistItem>> {
+  if (symbols.length === 0) return {}
 
   try {
     const symbolList = symbols.join(",")
@@ -62,16 +62,21 @@ async function fetchWatchlistQuotes(symbols: string[]): Promise<WatchlistItem[]>
       }
     }
 
-    return quotes.map((q: Record<string, unknown>) => ({
-      symbol: q.symbol as string,
-      shortName: q.shortName as string,
-      price: q.regularMarketPrice as number,
-      change: q.regularMarketChange as number,
-      changePct: q.regularMarketChangePercent as number,
-      sparklineData: chartDataMap[q.symbol as string] ?? [],
-    }))
+    const map: Record<string, WatchlistItem> = {}
+    for (const q of quotes) {
+      const sym = q.symbol as string
+      map[sym] = {
+        symbol: sym,
+        shortName: q.shortName as string,
+        price: q.regularMarketPrice as number,
+        change: q.regularMarketChange as number,
+        changePct: q.regularMarketChangePercent as number,
+        sparklineData: chartDataMap[sym] ?? [],
+      }
+    }
+    return map
   } catch {
-    return []
+    return {}
   }
 }
 
@@ -88,6 +93,11 @@ export function useWatchlistQuotes(symbols: string[]) {
     queryFn: () => fetchWatchlistQuotes(symbols),
     enabled: symbols.length > 0,
     staleTime: 2 * 60 * 1000, // 2 min for live quotes
-    placeholderData: keepPreviousData,
+    // Merge new data with old so existing items are never lost during refetch
+    structuralSharing: (oldData, newData) => {
+      if (!oldData || typeof oldData !== "object") return newData
+      // Merge: keep old entries, overwrite with new
+      return { ...(oldData as Record<string, WatchlistItem>), ...(newData as Record<string, WatchlistItem>) }
+    },
   })
 }

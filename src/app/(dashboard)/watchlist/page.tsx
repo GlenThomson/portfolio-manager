@@ -15,10 +15,11 @@ const MiniSparkline = dynamic(
   () => import("@/components/charts/mini-sparkline").then((m) => ({ default: m.MiniSparkline })),
   { ssr: false }
 )
-import { Plus, Star, TrendingUp, TrendingDown, X } from "lucide-react"
+import { Plus, Star, TrendingUp, TrendingDown, X, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useCurrency } from "@/hooks/useCurrency"
 import { useWatchlistMeta, useWatchlistQuotes } from "@/hooks/use-watchlist-data"
+import type { WatchlistItem } from "@/hooks/use-watchlist-data"
 
 export default function WatchlistPage() {
   const [newSymbol, setNewSymbol] = useState("")
@@ -30,7 +31,7 @@ export default function WatchlistPage() {
   const watchlistId = meta?.id ?? null
   const symbols = meta?.symbols ?? []
 
-  const { data: items = [] } = useWatchlistQuotes(symbols)
+  const { data: quotesMap = {} } = useWatchlistQuotes(symbols)
 
   async function addSymbol(e?: React.FormEvent, overrideSymbol?: string) {
     e?.preventDefault()
@@ -42,11 +43,14 @@ export default function WatchlistPage() {
 
     const newSymbols = [...symbols, symbol]
 
-    // Optimistically update the meta cache so the list doesn't flash
+    // Optimistically update meta so the card appears instantly
     queryClient.setQueryData(["watchlist-meta"], (old: { id: string | null; symbols: string[] } | undefined) => ({
       id: old?.id ?? null,
       symbols: newSymbols,
     }))
+
+    setNewSymbol("")
+    setDialogOpen(false)
 
     if (watchlistId) {
       await supabase
@@ -61,25 +65,20 @@ export default function WatchlistPage() {
         .single()
     }
 
-    // Refetch in background without clearing existing data
+    // Refetch in background — existing cards stay visible
     queryClient.invalidateQueries({ queryKey: ["watchlist-meta"] })
     queryClient.invalidateQueries({ queryKey: ["watchlist-quotes"] })
-    setNewSymbol("")
-    setDialogOpen(false)
   }
 
   async function removeSymbol(symbol: string) {
     if (!watchlistId) return
     const newSymbols = symbols.filter((s) => s !== symbol)
 
-    // Optimistically update both caches
+    // Optimistically update meta — card disappears instantly
     queryClient.setQueryData(["watchlist-meta"], (old: { id: string | null; symbols: string[] } | undefined) => ({
       id: old?.id ?? null,
       symbols: newSymbols,
     }))
-    queryClient.setQueryData(["watchlist-quotes", symbols], (old: unknown[] | undefined) =>
-      old?.filter((item: unknown) => (item as { symbol: string }).symbol !== symbol)
-    )
 
     const supabase = createClient()
     await supabase
@@ -149,48 +148,61 @@ export default function WatchlistPage() {
         </Card>
       ) : (
         <div className="grid gap-3">
-          {items.map((item) => (
-            <Card key={item.symbol} className="hover:bg-accent/30 transition-colors">
-              <CardContent className="flex items-center gap-4 py-3 px-4">
-                <Link href={`/stock/${item.symbol}`} className="flex-1 flex items-center gap-4">
-                  <div className="min-w-[100px]">
-                    <p className="font-bold text-primary">{item.symbol}</p>
-                    <p className="text-xs text-muted-foreground truncate max-w-[120px]">
-                      {item.shortName}
-                    </p>
-                  </div>
-                  <div className="hidden sm:block">
-                    <MiniSparkline data={item.sparklineData} />
-                  </div>
-                  <div className="ml-auto text-right">
-                    <p className="font-bold">{item.price != null ? fmtNative(item.price) : "—"}</p>
-                    <p
-                      className={cn(
-                        "text-sm flex items-center justify-end gap-1",
-                        (item.change ?? 0) >= 0 ? "text-green-500" : "text-red-500"
-                      )}
-                    >
-                      {(item.change ?? 0) >= 0 ? (
-                        <TrendingUp className="h-3 w-3" />
+          {symbols.map((symbol) => {
+            const item: WatchlistItem | undefined = quotesMap[symbol]
+            return (
+              <Card key={symbol} className="hover:bg-accent/30 transition-colors">
+                <CardContent className="flex items-center gap-4 py-3 px-4">
+                  <Link href={`/stock/${symbol}`} className="flex-1 flex items-center gap-4">
+                    <div className="min-w-[100px]">
+                      <p className="font-bold text-primary">{symbol}</p>
+                      <p className="text-xs text-muted-foreground truncate max-w-[120px]">
+                        {item?.shortName ?? ""}
+                      </p>
+                    </div>
+                    <div className="hidden sm:block">
+                      {item ? (
+                        <MiniSparkline data={item.sparklineData} />
                       ) : (
-                        <TrendingDown className="h-3 w-3" />
+                        <div className="w-[100px] h-[32px]" />
                       )}
-                      {(item.change ?? 0) >= 0 ? "+" : ""}
-                      {item.changePct != null ? `${item.changePct.toFixed(2)}%` : "—"}
-                    </p>
-                  </div>
-                </Link>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                  onClick={() => removeSymbol(item.symbol)}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
+                    </div>
+                    <div className="ml-auto text-right">
+                      {item ? (
+                        <>
+                          <p className="font-bold">{item.price != null ? fmtNative(item.price) : "—"}</p>
+                          <p
+                            className={cn(
+                              "text-sm flex items-center justify-end gap-1",
+                              (item.change ?? 0) >= 0 ? "text-green-500" : "text-red-500"
+                            )}
+                          >
+                            {(item.change ?? 0) >= 0 ? (
+                              <TrendingUp className="h-3 w-3" />
+                            ) : (
+                              <TrendingDown className="h-3 w-3" />
+                            )}
+                            {(item.change ?? 0) >= 0 ? "+" : ""}
+                            {item.changePct != null ? `${item.changePct.toFixed(2)}%` : "—"}
+                          </p>
+                        </>
+                      ) : (
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground ml-auto" />
+                      )}
+                    </div>
+                  </Link>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                    onClick={() => removeSymbol(symbol)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </CardContent>
+              </Card>
+            )
+          })}
         </div>
       )}
     </div>
