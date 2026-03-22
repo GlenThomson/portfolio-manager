@@ -32,15 +32,21 @@ export default function WatchlistPage() {
 
   const { data: items = [] } = useWatchlistQuotes(symbols)
 
-  async function addSymbol(e: React.FormEvent) {
-    e.preventDefault()
-    const symbol = newSymbol.toUpperCase().trim()
+  async function addSymbol(e?: React.FormEvent, overrideSymbol?: string) {
+    e?.preventDefault()
+    const symbol = (overrideSymbol ?? newSymbol).toUpperCase().trim()
     if (!symbol || symbols.includes(symbol)) return
 
     const supabase = createClient()
     const userId = await getCurrentUserId()
 
     const newSymbols = [...symbols, symbol]
+
+    // Optimistically update the meta cache so the list doesn't flash
+    queryClient.setQueryData(["watchlist-meta"], (old: { id: string | null; symbols: string[] } | undefined) => ({
+      id: old?.id ?? null,
+      symbols: newSymbols,
+    }))
 
     if (watchlistId) {
       await supabase
@@ -55,7 +61,7 @@ export default function WatchlistPage() {
         .single()
     }
 
-    // Invalidate both watchlist queries so they refetch
+    // Refetch in background without clearing existing data
     queryClient.invalidateQueries({ queryKey: ["watchlist-meta"] })
     queryClient.invalidateQueries({ queryKey: ["watchlist-quotes"] })
     setNewSymbol("")
@@ -65,6 +71,16 @@ export default function WatchlistPage() {
   async function removeSymbol(symbol: string) {
     if (!watchlistId) return
     const newSymbols = symbols.filter((s) => s !== symbol)
+
+    // Optimistically update both caches
+    queryClient.setQueryData(["watchlist-meta"], (old: { id: string | null; symbols: string[] } | undefined) => ({
+      id: old?.id ?? null,
+      symbols: newSymbols,
+    }))
+    queryClient.setQueryData(["watchlist-quotes", symbols], (old: unknown[] | undefined) =>
+      old?.filter((item: unknown) => (item as { symbol: string }).symbol !== symbol)
+    )
+
     const supabase = createClient()
     await supabase
       .from("watchlists")
@@ -97,17 +113,16 @@ export default function WatchlistPage() {
             <DialogHeader>
               <DialogTitle>Add to Watchlist</DialogTitle>
             </DialogHeader>
-            <form onSubmit={addSymbol} className="space-y-4">
+            <form onSubmit={(e) => addSymbol(e)} className="flex items-center gap-2">
               <TickerSearch
                 value={newSymbol}
                 onChange={setNewSymbol}
-                onSelect={(sym) => {
-                  setNewSymbol(sym)
-                }}
-                placeholder="e.g. AAPL, MSFT, GOOGL"
+                onSelect={(sym) => addSymbol(undefined, sym)}
+                placeholder="e.g. AAPL"
+                className="flex-1"
                 autoFocus
               />
-              <Button type="submit" className="w-full">Add</Button>
+              <Button type="submit" className="shrink-0">Add</Button>
             </form>
           </DialogContent>
         </Dialog>
