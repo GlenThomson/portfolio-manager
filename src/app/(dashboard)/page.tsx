@@ -383,43 +383,33 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Day Change */}
+        {/* Profit & Loss */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Day Change</CardTitle>
-            {dayChange >= 0 ? (
-              <TrendingUp className="h-4 w-4 text-green-500" />
-            ) : (
-              <TrendingDown className="h-4 w-4 text-red-500" />
-            )}
-          </CardHeader>
-          <CardContent>
-            <div className={cn("text-2xl font-bold", dayChange >= 0 ? "text-green-500" : "text-red-500")}>
-              {dayChange >= 0 ? "+" : ""}{fmtHome(dayChange)}
-            </div>
-            <p className={cn("text-xs", dayChange >= 0 ? "text-green-500" : "text-red-500")}>
-              {dayChangePct >= 0 ? "+" : ""}{dayChangePct.toFixed(2)}%
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Total P&L */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total P&L</CardTitle>
+            <CardTitle className="text-sm font-medium">Profit & Loss</CardTitle>
             {totalPnl >= 0 ? (
               <TrendingUp className="h-4 w-4 text-green-500" />
             ) : (
               <TrendingDown className="h-4 w-4 text-red-500" />
             )}
           </CardHeader>
-          <CardContent>
-            <div className={cn("text-2xl font-bold", totalPnl >= 0 ? "text-green-500" : "text-red-500")}>
-              {totalPnl >= 0 ? "+" : ""}{fmtHome(totalPnl)}
+          <CardContent className="space-y-2">
+            <div>
+              <div className={cn("text-2xl font-bold", totalPnl >= 0 ? "text-green-500" : "text-red-500")}>
+                {totalPnl >= 0 ? "+" : ""}{fmtHome(totalPnl)}
+              </div>
+              <p className={cn("text-xs", totalPnl >= 0 ? "text-green-500" : "text-red-500")}>
+                {totalPnlPct >= 0 ? "+" : ""}{totalPnlPct.toFixed(2)}% all time
+              </p>
             </div>
-            <p className={cn("text-xs", totalPnl >= 0 ? "text-green-500" : "text-red-500")}>
-              {totalPnlPct >= 0 ? "+" : ""}{totalPnlPct.toFixed(2)}%
-            </p>
+            <div className="border-t pt-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">Today</span>
+                <span className={cn("text-sm font-medium", dayChange >= 0 ? "text-green-500" : "text-red-500")}>
+                  {dayChange >= 0 ? "+" : ""}{fmtHome(dayChange)} ({dayChangePct >= 0 ? "+" : ""}{dayChangePct.toFixed(2)}%)
+                </span>
+              </div>
+            </div>
           </CardContent>
         </Card>
 
