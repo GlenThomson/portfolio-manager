@@ -1,6 +1,6 @@
 "use client"
 
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
 
 export interface WatchlistItem {
@@ -88,16 +88,24 @@ export function useWatchlistMeta() {
 }
 
 export function useWatchlistQuotes(symbols: string[]) {
+  const queryClient = useQueryClient()
+
   return useQuery({
-    queryKey: ["watchlist-quotes", symbols],
-    queryFn: () => fetchWatchlistQuotes(symbols),
+    // Static key — never changes, so cached data is never thrown away
+    queryKey: ["watchlist-quotes"],
+    queryFn: async () => {
+      // Read the latest symbols from the meta cache at fetch time
+      const meta = queryClient.getQueryData<WatchlistMeta>(["watchlist-meta"])
+      const currentSymbols = meta?.symbols ?? symbols
+      if (currentSymbols.length === 0) return {}
+
+      const freshData = await fetchWatchlistQuotes(currentSymbols)
+
+      // Merge with existing cached data so old entries survive partial refetches
+      const existing = queryClient.getQueryData<Record<string, WatchlistItem>>(["watchlist-quotes"]) ?? {}
+      return { ...existing, ...freshData }
+    },
     enabled: symbols.length > 0,
     staleTime: 2 * 60 * 1000, // 2 min for live quotes
-    // Merge new data with old so existing items are never lost during refetch
-    structuralSharing: (oldData, newData) => {
-      if (!oldData || typeof oldData !== "object") return newData
-      // Merge: keep old entries, overwrite with new
-      return { ...(oldData as Record<string, WatchlistItem>), ...(newData as Record<string, WatchlistItem>) }
-    },
   })
 }

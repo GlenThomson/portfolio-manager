@@ -43,12 +43,6 @@ export default function WatchlistPage() {
 
     const newSymbols = [...symbols, symbol]
 
-    // Copy existing quotes cache to the new query key so old items keep their data
-    const existingQuotes = queryClient.getQueryData<Record<string, WatchlistItem>>(["watchlist-quotes", symbols])
-    if (existingQuotes) {
-      queryClient.setQueryData(["watchlist-quotes", newSymbols], existingQuotes)
-    }
-
     // Optimistically update meta so the card appears instantly
     queryClient.setQueryData(["watchlist-meta"], (old: { id: string | null; symbols: string[] } | undefined) => ({
       id: old?.id ?? null,
@@ -71,9 +65,8 @@ export default function WatchlistPage() {
         .single()
     }
 
-    // Refetch quotes in background to pick up the new symbol's data
+    // Refetch quotes in background — static key means old data stays visible
     queryClient.invalidateQueries({ queryKey: ["watchlist-quotes"] })
-    // Sync meta from DB (won't flash — data stays during refetch)
     queryClient.invalidateQueries({ queryKey: ["watchlist-meta"] })
   }
 
@@ -81,13 +74,13 @@ export default function WatchlistPage() {
     if (!watchlistId) return
     const newSymbols = symbols.filter((s) => s !== symbol)
 
-    // Copy quotes cache minus the removed symbol to the new key
-    const existingQuotes = queryClient.getQueryData<Record<string, WatchlistItem>>(["watchlist-quotes", symbols])
-    if (existingQuotes) {
-      const updated = { ...existingQuotes }
+    // Optimistically remove from quotes cache
+    queryClient.setQueryData<Record<string, WatchlistItem>>(["watchlist-quotes"], (old) => {
+      if (!old) return old
+      const updated = { ...old }
       delete updated[symbol]
-      queryClient.setQueryData(["watchlist-quotes", newSymbols], updated)
-    }
+      return updated
+    })
 
     // Optimistically update meta — card disappears instantly
     queryClient.setQueryData(["watchlist-meta"], (old: { id: string | null; symbols: string[] } | undefined) => ({
