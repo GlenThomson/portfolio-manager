@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Briefcase, TrendingUp, TrendingDown, DollarSign, Plus, ArrowRight, Star, Activity, ArrowUpDown, Receipt, Newspaper, ExternalLink } from "lucide-react"
+import { Briefcase, TrendingUp, TrendingDown, DollarSign, Plus, ArrowRight, Star, Activity, ArrowUpDown, Receipt, Newspaper, ExternalLink, Landmark } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { AllocationChart } from "@/components/dashboard/allocation-chart"
 import { useCurrency } from "@/hooks/useCurrency"
@@ -37,6 +37,7 @@ export default function DashboardPage() {
     quotes = {},
     watchlistQuotes = [],
     transactions = [],
+    assets = [],
   } = data ?? {}
 
   // Separate stock and cash positions
@@ -61,6 +62,15 @@ export default function DashboardPage() {
 
   const totalPnl = totalValue - totalCost
   const totalPnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0
+
+  // Net worth calculations
+  const LIABILITY_TYPES = new Set(["mortgage", "loan", "credit-card", "other-liability"])
+  const otherAssets = assets.filter((a) => !LIABILITY_TYPES.has(a.type))
+  const liabilities = assets.filter((a) => LIABILITY_TYPES.has(a.type))
+  const totalOtherAssets = otherAssets.reduce((sum, a) => sum + a.value, 0)
+  const totalLiabilities = liabilities.reduce((sum, a) => sum + a.value, 0)
+  const netWorth = totalValue + totalCash + totalOtherAssets - totalLiabilities
+  const hasAssets = assets.length > 0
 
   const dayChange = stockPositions.reduce((sum, p) => {
     const q = quotes[p.symbol]
@@ -223,10 +233,26 @@ export default function DashboardPage() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+      <div className={cn("grid gap-4 grid-cols-1 sm:grid-cols-2", hasAssets ? "lg:grid-cols-5" : "lg:grid-cols-4")}>
+        {hasAssets && (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Net Worth</CardTitle>
+              <Landmark className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className={cn("text-2xl font-bold", netWorth >= 0 ? "text-green-500" : "text-red-500")}>
+                {fmtHome(netWorth)}
+              </div>
+              <Link href="/assets" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+                View breakdown
+              </Link>
+            </CardContent>
+          </Card>
+        )}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Value</CardTitle>
+            <CardTitle className="text-sm font-medium">{hasAssets ? "Portfolio" : "Total Value"}</CardTitle>
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
