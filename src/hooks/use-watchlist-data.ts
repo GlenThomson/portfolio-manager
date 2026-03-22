@@ -1,6 +1,6 @@
 "use client"
 
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, keepPreviousData } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
 
 interface WatchlistItem {
@@ -88,5 +88,6 @@ export function useWatchlistQuotes(symbols: string[]) {
     queryFn: () => fetchWatchlistQuotes(symbols),
     enabled: symbols.length > 0,
     staleTime: 2 * 60 * 1000, // 2 min for live quotes
+    placeholderData: keepPreviousData,
   })
 }
