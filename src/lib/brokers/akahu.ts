@@ -162,17 +162,6 @@ export interface AkahuBankAccount {
   currency: string
 }
 
-export interface AkahuTransaction {
-  id: string
-  accountId: string
-  date: string
-  description: string
-  amount: number
-  type: string
-  category?: string
-  merchant?: string
-}
-
 /**
  * Fetch all accounts (bank, credit card, mortgage, savings, KiwiSaver)
  * — not just investment accounts.
@@ -203,65 +192,5 @@ export async function fetchAllAccounts(userToken: string, appTokenOverride?: str
     connectionName: a.connection?.name ?? "",
     balance: a.balance?.current ?? 0,
     currency: a.balance?.currency ?? "NZD",
-  }))
-}
-
-/**
- * Fetch transactions from Akahu for a given user.
- * Only fetches income (positive amounts) by default.
- * `since` is an ISO date string to fetch from (e.g. 30 days ago).
- */
-export async function fetchTransactions(
-  userToken: string,
-  options?: { since?: string; appTokenOverride?: string }
-): Promise<AkahuTransaction[]> {
-  const client = options?.appTokenOverride
-    ? new AkahuClient({ appToken: options.appTokenOverride })
-    : getClient()
-
-  const since = options?.since ?? new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()
-
-  // Collect all pages of transactions
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const allTransactions: any[] = []
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let cursor: any = undefined
-    let hasMore = true
-    while (hasMore) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const page: any = await client.transactions.list(userToken, {
-        start: since,
-        ...(cursor ? { cursor } : {}),
-      })
-      // Akahu SDK returns { items: Transaction[], cursor?: { next?: string } }
-      const items = Array.isArray(page) ? page : (page.items ?? [])
-      allTransactions.push(...items)
-      cursor = page?.cursor?.next
-      hasMore = !!cursor
-    }
-  } catch (err: unknown) {
-    const code = (err as { code?: string })?.code
-    if (code === "ECONNRESET" || code === "ETIMEDOUT") {
-      await new Promise((r) => setTimeout(r, 1000))
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const page: any = await client.transactions.list(userToken, { start: since })
-      const items = Array.isArray(page) ? page : (page.items ?? [])
-      allTransactions.push(...items)
-    } else {
-      throw err
-    }
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return allTransactions.map((t: any) => ({
-    id: t._id,
-    accountId: t._account,
-    date: t.date,
-    description: t.description ?? "",
-    amount: t.amount ?? 0,
-    type: t.type ?? "EFTPOS",
-    category: t.category?.name ?? undefined,
-    merchant: t.merchant?.name ?? undefined,
   }))
 }
