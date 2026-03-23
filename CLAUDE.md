@@ -24,9 +24,12 @@ AI-powered portfolio management app for NZ-based investors. Built by a solo deve
 
 ## Workflow Rules
 
-- **Never push to main** unless explicitly told to. Always create a feature/fix branch first.
-- Wait for the user to test changes before merging or pushing to main.
-- When told to merge: merge branch to main, push, then verify Vercel deployment succeeds.
+- **Main is protected** — no direct pushes. All changes go through branches and PRs.
+- **Workflow**: create branch → make changes → user tests locally (`npm run dev`) → merge to main via PR → Vercel auto-deploys.
+- **Never deploy preview builds to Vercel** — the user tests locally, not on Vercel previews.
+- **Never use `vercel --prod` or `vercel` CLI to deploy** — Vercel auto-deploys from main on push.
+- Wait for the user to test changes locally before creating a PR or merging.
+- When told to merge: create PR, merge to main. Vercel handles deployment automatically.
 - Keep commits focused — one logical change per commit.
 - Remove debug endpoints and console.logs before pushing to production.
 

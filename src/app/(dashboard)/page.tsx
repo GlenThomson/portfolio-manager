@@ -131,7 +131,8 @@ export default function DashboardPage() {
     if (lastSync && Number(lastSync) > oneDayAgo) return
     fetch("/api/brokers/akahu/sync-bank", { method: "POST" })
       .then((res) => {
-        if (res.ok) localStorage.setItem("lastBankSync", String(Date.now()))
+        // Set timestamp on success OR 400 (not connected) to avoid retrying every load
+        if (res.ok || res.status === 400) localStorage.setItem("lastBankSync", String(Date.now()))
       })
       .catch(() => {})
   }, [isLoading, data])
