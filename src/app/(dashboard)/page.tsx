@@ -39,6 +39,7 @@ export default function DashboardPage() {
   const { data: marketNews = [] } = useMarketNews()
   const { fmtNative, fmtHome, fmtLocal, homeCurrency, fxRate } = useCurrency()
   const snapshotRecorded = useRef(false)
+  const bankSyncTriggered = useRef(false)
 
   // Fetch net worth history
   const { data: netWorthHistory = [] } = useQuery({
@@ -120,6 +121,20 @@ export default function DashboardPage() {
       }),
     }).catch(() => {})
   }, [isLoading, data, totalValueHome, totalCashHome, totalOtherAssets, totalLiabilities, netWorth])
+
+  // Daily bank sync — only fires once per 24h
+  useEffect(() => {
+    if (bankSyncTriggered.current || isLoading || !data) return
+    bankSyncTriggered.current = true
+    const lastSync = localStorage.getItem("lastBankSync")
+    const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000
+    if (lastSync && Number(lastSync) > oneDayAgo) return
+    fetch("/api/brokers/akahu/sync-bank", { method: "POST" })
+      .then((res) => {
+        if (res.ok) localStorage.setItem("lastBankSync", String(Date.now()))
+      })
+      .catch(() => {})
+  }, [isLoading, data])
 
   // Net worth breakdown segments
   const ASSET_TYPE_ICONS: Record<string, typeof Home> = {
