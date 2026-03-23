@@ -1,9 +1,8 @@
 /**
  * Stock Scoring Engine — main entry point.
- * Fetches all needed data in parallel and computes a multi-factor score.
- *
- * Factors: Momentum (30%), Fundamental (30%), Technical (20%),
- *          Sentiment (10%), Risk (10%)
+ * Fetches all needed data in parallel and computes a two-part score:
+ *   1. Investment Grade — is this a good business? (long-term quality)
+ *   2. Entry Signal — is now a good time to buy? (technical timing)
  */
 
 import YahooFinance from "yahoo-finance2"
@@ -29,6 +28,9 @@ import { computeFundamentalScore, type FundamentalInput } from "./fundamental-sc
 import { computeSentimentScore, classifyHeadline, type SentimentInput } from "./sentiment-score"
 import { computeMomentumScore, type MomentumInput } from "./momentum-score"
 import { computeRiskScore, computeMaxDrawdown, type RiskInput } from "./risk-score"
+import { computeFinancialHealthScore, type FinancialHealthInput } from "./financial-health-score"
+import { computeGrowthScore, type GrowthInput } from "./growth-score"
+import { computeEntryScore, type EntryInput } from "./entry-score"
 import { computeCompositeScore, type StockScore, type SignalFreshness } from "./composite-score"
 
 export type { StockScore } from "./composite-score"
@@ -41,7 +43,7 @@ const scoreCache = new Map<string, { data: StockScore; timestamp: number }>()
 const CACHE_TTL = 10 * 60 * 1000 // 10 minutes
 
 /**
- * Get a comprehensive multi-factor score for a stock symbol.
+ * Get a comprehensive two-part score for a stock symbol.
  */
 export async function getStockScore(symbol: string): Promise<StockScore> {
   const upper = symbol.toUpperCase()
@@ -73,119 +75,98 @@ export async function getStockScore(symbol: string): Promise<StockScore> {
   const lastIdx = closes.length - 1
   const currentPrice = closes[lastIdx] ?? 0
 
-  // ── Technical indicators ──
-  let technicalInput: TechnicalInput = {
-    rsi: null,
-    macdHistogram: null,
-    macdHistogramPrev: null,
-    bollingerPercentB: null,
-    price: currentPrice,
-    sma50: null,
-    sma200: null,
-    volumeRatio: null,
-  }
+  // ── Technical indicators (computed once, used by both legacy and entry score) ──
+  let rsi: number | null = null
+  let macdHistogram: number | null = null
+  let macdHistogramPrev: number | null = null
+  let bollingerPercentB: number | null = null
+  let sma50: number | null = null
+  let sma200: number | null = null
+  let volumeRatio: number | null = null
 
   if (closes.length >= 50) {
     const rsiValues = computeRSI(closes, 14)
     const macdResult = computeMACD(closes)
-    const sma50 = computeSMA(closes, 50)
-    const sma200 = computeSMA(closes, 200)
+    const sma50Arr = computeSMA(closes, 50)
+    const sma200Arr = computeSMA(closes, 200)
     const bb = computeBollingerBands(closes, 20, 2)
+
+    rsi = rsiValues[lastIdx]
+    macdHistogram = macdResult.histogram[lastIdx]
+    macdHistogramPrev = lastIdx > 0 ? macdResult.histogram[lastIdx - 1] : null
+    sma50 = sma50Arr[lastIdx]
+    sma200 = sma200Arr[lastIdx]
 
     const bbUpper = bb.upper[lastIdx]
     const bbLower = bb.lower[lastIdx]
-    const percentB =
+    bollingerPercentB =
       !isNaN(bbUpper) && !isNaN(bbLower) && bbUpper !== bbLower
         ? (currentPrice - bbLower) / (bbUpper - bbLower)
-        : NaN
+        : null
 
     const recentVolumes = volumes.slice(Math.max(0, lastIdx - 19), lastIdx + 1)
     const avgVolume =
       recentVolumes.length > 0
         ? recentVolumes.reduce((a, b) => a + b, 0) / recentVolumes.length
         : 0
-    const volumeRatio = avgVolume > 0 ? volumes[lastIdx] / avgVolume : NaN
-
-    technicalInput = {
-      rsi: rsiValues[lastIdx],
-      macdHistogram: macdResult.histogram[lastIdx],
-      macdHistogramPrev: lastIdx > 0 ? macdResult.histogram[lastIdx - 1] : null,
-      bollingerPercentB: percentB,
-      price: currentPrice,
-      sma50: sma50[lastIdx],
-      sma200: sma200[lastIdx],
-      volumeRatio,
-    }
+    volumeRatio = avgVolume > 0 ? volumes[lastIdx] / avgVolume : null
   }
 
-  const technicalResult = computeTechnicalScore(technicalInput)
-
-  // ── Fundamental data ──
+  // ── Fundamentals data ──
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fundData: any =
     fundamentalsResult.status === "fulfilled" ? fundamentalsResult.value : {}
 
+  // ── ENTRY SIGNAL ──
+  const entryInput: EntryInput = {
+    rsi,
+    bollingerPercentB,
+    price: currentPrice,
+    sma200,
+    recentHigh52w: fundData.fiftyTwoWeekHigh ?? null,
+  }
+  const entryResult = computeEntryScore(entryInput)
+
+  // ── INVESTMENT GRADE: Business Quality (fundamental) ──
   const fundamentalInput: FundamentalInput = {
     forwardPE: fundData.forwardPE ?? null,
     revenueGrowth: fundData.revenueGrowth ?? null,
     profitMargin: fundData.profitMargins ?? null,
     returnOnEquity: fundData.returnOnEquity ?? null,
     epsGrowth: fundData.earningsGrowth ?? null,
-    recommendationKey: fundData.recommendationKey ?? null,
+    sector: fundData.sector ?? null,
   }
-
   const fundamentalResult = computeFundamentalScore(fundamentalInput)
 
-  // ── Sentiment ──
-  const reddit =
-    sentimentResult.status === "fulfilled" ? sentimentResult.value : null
-  const fearGreed =
-    fearGreedResult.status === "fulfilled" ? fearGreedResult.value : null
-  const headlines: string[] =
-    newsResult.status === "fulfilled" ? newsResult.value : []
+  // ── INVESTMENT GRADE: Growth & Earnings Power ──
+  const growthInput: GrowthInput = {
+    revenueGrowth: fundData.revenueGrowth ?? null,
+    epsGrowth: fundData.earningsGrowth ?? null,
+    epsRevisionsUp30d: fundData.epsRevisionsUp30d ?? null,
+    epsRevisionsDown30d: fundData.epsRevisionsDown30d ?? null,
+    epsTrendCurrent: fundData.epsTrendCurrent ?? null,
+    epsTrend90dAgo: fundData.epsTrend90dAgo ?? null,
+  }
+  const growthResult = computeGrowthScore(growthInput)
 
-  // Insider data
+  // ── INVESTMENT GRADE: Financial Health ──
+  const healthInput: FinancialHealthInput = {
+    debtToEquity: fundData.debtToEquity ?? null,
+    freeCashflow: fundData.freeCashflow ?? null,
+    marketCap: fundData.marketCap ?? null,
+    currentRatio: fundData.currentRatio ?? null,
+    operatingIncome: fundData.operatingIncome ?? null,
+    interestExpense: fundData.interestExpense ?? null,
+  }
+  const healthResult = computeFinancialHealthScore(healthInput)
+
+  // ── INVESTMENT GRADE: Insider Signal ──
   const insiderTxns =
     insiderResult.status === "fulfilled" ? insiderResult.value : null
 
-  // Classify headlines
-  let newsPositive = 0
-  let newsNegative = 0
-  let newsNeutral = 0
-  for (const h of headlines) {
-    const cls = classifyHeadline(h)
-    if (cls === "positive") newsPositive++
-    else if (cls === "negative") newsNegative++
-    else newsNeutral++
-  }
+  let insiderScore = 50
+  const insiderDetails: Record<string, string> = {}
 
-  // Compute analyst dispersion from recommendation trend
-  const recTrend = fundData.recommendationTrend ?? null
-  let analystDispersion: number | null = null
-  if (recTrend) {
-    const counts = [
-      recTrend.strongBuy ?? 0,
-      recTrend.buy ?? 0,
-      recTrend.hold ?? 0,
-      recTrend.sell ?? 0,
-      recTrend.strongSell ?? 0,
-    ]
-    const total = counts.reduce((a: number, b: number) => a + b, 0)
-    if (total > 0) {
-      // Weighted mean and std dev of recommendation distribution (1=strong sell, 5=strong buy)
-      const weights = [5, 4, 3, 2, 1]
-      const mean = counts.reduce((sum: number, c: number, i: number) => sum + c * weights[i], 0) / total
-      const variance = counts.reduce(
-        (sum: number, c: number, i: number) => sum + c * Math.pow(weights[i] - mean, 2),
-        0
-      ) / total
-      analystDispersion = Math.sqrt(variance)
-    }
-  }
-
-  // Process insider transactions
-  let insiderNetBuys: number | null = null
-  let insiderCsuiteBuys: number | null = null
   if (insiderTxns != null) {
     const ninetyDaysAgo = new Date()
     ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
@@ -193,20 +174,110 @@ export async function getStockScore(symbol: string): Promise<StockScore> {
       (t) => new Date(t.transactionDate) >= ninetyDaysAgo
     )
 
-    // P = purchase, S = sale
+    const buys = recentTxns.filter((t) => t.transactionCode === "P")
+    const sells = recentTxns.filter((t) => t.transactionCode === "S")
+    const netBuys = buys.length - sells.length
+
+    const cSuitePattern = /\b(ceo|cfo|coo|cto|president|chairman|chief)\b/i
+    const cSuiteBuys = buys.filter((t) => cSuitePattern.test(t.name)).length
+
+    if (cSuiteBuys >= 2) {
+      insiderScore = 85
+      insiderDetails.activity = `${cSuiteBuys} C-suite purchases in 90 days — strong conviction`
+    } else if (netBuys > 3) {
+      insiderScore = 70
+      insiderDetails.activity = `Net ${netBuys} insider purchases in 90 days — bullish`
+    } else if (netBuys > 0) {
+      insiderScore = 60
+      insiderDetails.activity = `Net ${netBuys} insider purchase(s) in 90 days`
+    } else if (netBuys < -3) {
+      insiderScore = 30
+      insiderDetails.activity = `Net ${Math.abs(netBuys)} insider sales in 90 days — bearish`
+    } else if (netBuys < 0) {
+      insiderScore = 40
+      insiderDetails.activity = `Net ${Math.abs(netBuys)} insider sale(s) in 90 days`
+    } else {
+      insiderDetails.activity = "No significant insider activity in 90 days"
+    }
+  } else {
+    insiderDetails.activity = "Insider data unavailable"
+  }
+
+  // ── DOWNSIDE RISK (max drawdown only) ──
+  const maxDrawdownPct = closes.length >= 20 ? computeMaxDrawdown(closes) : null
+  let downsideRiskScore = 50
+  const downsideDetails: Record<string, string> = {}
+
+  if (maxDrawdownPct != null) {
+    if (maxDrawdownPct < 10) {
+      downsideRiskScore = 85
+      downsideDetails.drawdown = `Max drawdown ${maxDrawdownPct.toFixed(1)}% — resilient`
+    } else if (maxDrawdownPct < 20) {
+      downsideRiskScore = 65
+      downsideDetails.drawdown = `Max drawdown ${maxDrawdownPct.toFixed(1)}% — moderate`
+    } else if (maxDrawdownPct < 35) {
+      downsideRiskScore = 40
+      downsideDetails.drawdown = `Max drawdown ${maxDrawdownPct.toFixed(1)}% — significant`
+    } else {
+      downsideRiskScore = 20
+      downsideDetails.drawdown = `Max drawdown ${maxDrawdownPct.toFixed(1)}% — severe`
+    }
+  } else {
+    downsideDetails.drawdown = "Drawdown data unavailable"
+  }
+
+  // ── Legacy scores (kept for detail breakdown and backward compat) ──
+  const technicalInput: TechnicalInput = {
+    rsi, macdHistogram, macdHistogramPrev, bollingerPercentB,
+    price: currentPrice, sma50, sma200, volumeRatio,
+  }
+  const technicalResult = computeTechnicalScore(technicalInput)
+
+  const reddit = sentimentResult.status === "fulfilled" ? sentimentResult.value : null
+  const fearGreed = fearGreedResult.status === "fulfilled" ? fearGreedResult.value : null
+  const headlines: string[] = newsResult.status === "fulfilled" ? newsResult.value : []
+
+  let newsPositive = 0, newsNegative = 0, newsNeutral = 0
+  for (const h of headlines) {
+    const cls = classifyHeadline(h)
+    if (cls === "positive") newsPositive++
+    else if (cls === "negative") newsNegative++
+    else newsNeutral++
+  }
+
+  const recTrend = fundData.recommendationTrend ?? null
+  let analystDispersion: number | null = null
+  if (recTrend) {
+    const counts = [
+      recTrend.strongBuy ?? 0, recTrend.buy ?? 0, recTrend.hold ?? 0,
+      recTrend.sell ?? 0, recTrend.strongSell ?? 0,
+    ]
+    const total = counts.reduce((a: number, b: number) => a + b, 0)
+    if (total > 0) {
+      const weights = [5, 4, 3, 2, 1]
+      const mean = counts.reduce((sum: number, c: number, i: number) => sum + c * weights[i], 0) / total
+      const variance = counts.reduce(
+        (sum: number, c: number, i: number) => sum + c * Math.pow(weights[i] - mean, 2), 0
+      ) / total
+      analystDispersion = Math.sqrt(variance)
+    }
+  }
+
+  let insiderNetBuys: number | null = null
+  let insiderCsuiteBuys: number | null = null
+  if (insiderTxns != null) {
+    const ninetyDaysAgo = new Date()
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
+    const recentTxns = insiderTxns.filter((t) => new Date(t.transactionDate) >= ninetyDaysAgo)
     const buys = recentTxns.filter((t) => t.transactionCode === "P")
     const sells = recentTxns.filter((t) => t.transactionCode === "S")
     insiderNetBuys = buys.length - sells.length
-
-    // C-suite detection: names containing CEO, CFO, COO, CTO, President, Chairman, Director
     const cSuitePattern = /\b(ceo|cfo|coo|cto|president|chairman|chief)\b/i
     insiderCsuiteBuys = buys.filter((t) => cSuitePattern.test(t.name)).length
   }
 
   const sentimentInput: SentimentInput = {
-    newsPositive,
-    newsNegative,
-    newsNeutral,
+    newsPositive, newsNegative, newsNeutral,
     wsbSentiment: reddit?.wsbSentiment ?? null,
     wsbSentimentScore: reddit?.wsbSentimentScore ?? null,
     redditMentions: reddit?.redditMentions ?? null,
@@ -218,28 +289,21 @@ export async function getStockScore(symbol: string): Promise<StockScore> {
     insiderNetBuys,
     insiderCsuitebuys: insiderCsuiteBuys,
   }
-
   const sentimentScoreResult = computeSentimentScore(sentimentInput)
 
-  // ── Momentum (with EPS revisions) ──
   const price3mAgo = closes.length >= 63 ? closes[closes.length - 63] : null
   const price6mAgo = closes.length >= 126 ? closes[closes.length - 126] : null
   const price12mAgo = closes.length >= 252 ? closes[closes.length - 252] : null
 
   const momentumInput: MomentumInput = {
-    currentPrice,
-    price3mAgo,
-    price6mAgo,
-    price12mAgo,
+    currentPrice, price3mAgo, price6mAgo, price12mAgo,
     epsRevisionsUp30d: fundData.epsRevisionsUp30d ?? null,
     epsRevisionsDown30d: fundData.epsRevisionsDown30d ?? null,
     epsTrendCurrent: fundData.epsTrendCurrent ?? null,
     epsTrend90dAgo: fundData.epsTrend90dAgo ?? null,
   }
-
   const momentumResult = computeMomentumScore(momentumInput)
 
-  // ── Risk ──
   let atrPercent: number | null = null
   if (highs.length >= 14 && lows.length >= 14 && closes.length >= 14) {
     const atrValues = computeATR(highs, lows, closes, 14)
@@ -249,47 +313,51 @@ export async function getStockScore(symbol: string): Promise<StockScore> {
     }
   }
 
-  const maxDrawdownPct = closes.length >= 20 ? computeMaxDrawdown(closes) : null
-
   const riskInput: RiskInput = {
     beta: fundData.beta ?? null,
     atrPercent,
     maxDrawdownPercent: maxDrawdownPct,
   }
-
   const riskResult = computeRiskScore(riskInput)
 
   // ── Signal freshness ──
   const signalFreshness: Record<string, SignalFreshness> = {
-    technical: closes.length >= 50 ? "fresh" : "stale",
-    fundamental: fundData.forwardPE != null ? "fresh" : fundData.revenueGrowth != null ? "aging" : "stale",
-    sentiment: headlines.length > 0 ? "fresh" : fearGreed != null ? "aging" : "stale",
-    momentum: fundData.epsTrendCurrent != null ? "fresh" : price3mAgo != null ? "aging" : "stale",
-    risk: atrPercent != null ? "fresh" : fundData.beta != null ? "aging" : "stale",
+    businessQuality: fundData.forwardPE != null ? "fresh" : fundData.revenueGrowth != null ? "aging" : "stale",
+    growth: fundData.epsTrendCurrent != null ? "fresh" : fundData.revenueGrowth != null ? "aging" : "stale",
+    financialHealth: fundData.debtToEquity != null || fundData.freeCashflow != null ? "fresh" : "stale",
+    insider: insiderTxns != null ? "fresh" : "stale",
+    entry: closes.length >= 50 ? "fresh" : closes.length >= 20 ? "aging" : "stale",
   }
 
   // ── Combine all details ──
   const allDetails: Record<string, string> = {}
-  for (const [k, v] of Object.entries(technicalResult.details)) {
-    allDetails[`tech_${k}`] = v
-  }
-  for (const [k, v] of Object.entries(fundamentalResult.details)) {
-    allDetails[`fund_${k}`] = v
-  }
-  for (const [k, v] of Object.entries(sentimentScoreResult.details)) {
-    allDetails[`sent_${k}`] = v
-  }
-  for (const [k, v] of Object.entries(momentumResult.details)) {
-    allDetails[`mom_${k}`] = v
-  }
-  for (const [k, v] of Object.entries(riskResult.details)) {
-    allDetails[`risk_${k}`] = v
-  }
+
+  // Investment grade details
+  for (const [k, v] of Object.entries(fundamentalResult.details)) allDetails[`fund_${k}`] = v
+  for (const [k, v] of Object.entries(growthResult.details)) allDetails[`growth_${k}`] = v
+  for (const [k, v] of Object.entries(healthResult.details)) allDetails[`health_${k}`] = v
+  for (const [k, v] of Object.entries(insiderDetails)) allDetails[`insider_${k}`] = v
+  for (const [k, v] of Object.entries(downsideDetails)) allDetails[`downside_${k}`] = v
+
+  // Entry signal details
+  for (const [k, v] of Object.entries(entryResult.details)) allDetails[`entry_${k}`] = v
+
+  // Legacy details (for backward compat)
+  for (const [k, v] of Object.entries(technicalResult.details)) allDetails[`tech_${k}`] = v
+  for (const [k, v] of Object.entries(sentimentScoreResult.details)) allDetails[`sent_${k}`] = v
+  for (const [k, v] of Object.entries(momentumResult.details)) allDetails[`mom_${k}`] = v
+  for (const [k, v] of Object.entries(riskResult.details)) allDetails[`risk_${k}`] = v
 
   // ── Composite ──
   const score = computeCompositeScore({
-    technicalScore: technicalResult.score,
     fundamentalScore: fundamentalResult.score,
+    growthScore: growthResult.score,
+    financialHealthScore: healthResult.score,
+    insiderScore,
+    downsideRiskScore,
+    entryScore: entryResult.score,
+    // Legacy
+    technicalScore: technicalResult.score,
     sentimentScore: sentimentScoreResult.score,
     momentumScore: momentumResult.score,
     riskScore: riskResult.score,
@@ -304,10 +372,10 @@ export async function getStockScore(symbol: string): Promise<StockScore> {
   return score
 }
 
-// ── Helper: fetch ~400 days of chart data (covers 252 trading days for 12m momentum) ──
+// ── Helper: fetch ~400 days of chart data ──
 async function fetchChartData(symbol: string) {
   const d = new Date()
-  d.setDate(d.getDate() - 500) // ~350+ trading days for 12m returns
+  d.setDate(d.getDate() - 500)
   const period1 = d.toISOString().split("T")[0]
   return getChart(symbol, period1, "1d")
 }
@@ -323,6 +391,9 @@ async function fetchFundamentals(symbol: string) {
         "defaultKeyStatistics",
         "earningsTrend",
         "recommendationTrend",
+        "assetProfile",
+        "balanceSheetHistory",
+        "incomeStatementHistory",
       ],
     },
     { validateResult: false },
@@ -330,6 +401,7 @@ async function fetchFundamentals(symbol: string) {
 
   const fd = result?.financialData ?? {}
   const ks = result?.defaultKeyStatistics ?? {}
+  const sector: string | null = result?.assetProfile?.sector ?? null
 
   // EPS growth from earningsTrend
   let earningsGrowth: number | null = null
@@ -340,19 +412,14 @@ async function fetchFundamentals(symbol: string) {
 
   const trend = result?.earningsTrend?.trend
   if (Array.isArray(trend)) {
-    // Look for next quarter (+1q) or current year (0y) trend data
     for (const t of trend) {
       if (t.growth != null && earningsGrowth == null) {
         earningsGrowth = t.growth
       }
-
-      // EPS revision data — prefer +1q (next quarter) for freshness
       if (t.epsRevisions && epsRevisionsUp30d == null) {
         epsRevisionsUp30d = t.epsRevisions.upLast30days ?? null
         epsRevisionsDown30d = t.epsRevisions.downLast30days ?? null
       }
-
-      // EPS trend comparison: current vs 90 days ago
       if (t.epsTrend && epsTrendCurrent == null) {
         epsTrendCurrent = t.epsTrend.current ?? null
         epsTrend90dAgo = t.epsTrend["90daysAgo"] ?? null
@@ -360,14 +427,13 @@ async function fetchFundamentals(symbol: string) {
     }
   }
 
-  // Recommendation trend for dispersion calculation
+  // Recommendation trend for dispersion
   let recommendationTrend: {
     strongBuy: number; buy: number; hold: number; sell: number; strongSell: number
   } | null = null
 
   const recTrendArr = result?.recommendationTrend?.trend
   if (Array.isArray(recTrendArr) && recTrendArr.length > 0) {
-    // Use the most recent period
     const latest = recTrendArr[0]
     recommendationTrend = {
       strongBuy: latest.strongBuy ?? 0,
@@ -378,6 +444,25 @@ async function fetchFundamentals(symbol: string) {
     }
   }
 
+  // Financial health data
+  const freeCashflow: number | null = fd.freeCashflow ?? null
+  const marketCap: number | null = ks.marketCap ?? fd.marketCap ?? null
+  const debtToEquity: number | null = fd.debtToEquity != null ? fd.debtToEquity / 100 : null // Yahoo returns as percentage
+  const currentRatio: number | null = fd.currentRatio ?? null
+
+  // Interest coverage from income statement
+  let operatingIncome: number | null = null
+  let interestExpense: number | null = null
+  const incomeHistory = result?.incomeStatementHistory?.incomeStatementHistory
+  if (Array.isArray(incomeHistory) && incomeHistory.length > 0) {
+    const latest = incomeHistory[0]
+    operatingIncome = latest.operatingIncome ?? null
+    interestExpense = latest.interestExpense ?? null
+  }
+
+  // 52-week high
+  const fiftyTwoWeekHigh: number | null = ks.fiftyTwoWeekHigh ?? null
+
   return {
     forwardPE: ks.forwardPE ?? fd.forwardPE ?? null,
     revenueGrowth: fd.revenueGrowth ?? null,
@@ -387,12 +472,21 @@ async function fetchFundamentals(symbol: string) {
     recommendationKey: fd.recommendationKey ?? null,
     targetMeanPrice: fd.targetMeanPrice ?? null,
     beta: ks.beta ?? null,
+    sector,
+    fiftyTwoWeekHigh,
+    // Financial health
+    freeCashflow,
+    marketCap,
+    debtToEquity,
+    currentRatio,
+    operatingIncome,
+    interestExpense,
     // EPS revision data
     epsRevisionsUp30d,
     epsRevisionsDown30d,
     epsTrendCurrent,
     epsTrend90dAgo,
-    // Recommendation trend (for dispersion)
+    // Recommendation trend
     recommendationTrend,
   }
 }

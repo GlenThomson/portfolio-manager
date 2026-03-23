@@ -26,6 +26,7 @@ export interface MomentumInput {
 export interface MomentumScoreResult {
   score: number
   details: Record<string, string>
+  priceOnly: boolean // true when EPS data is unavailable and score relies solely on price momentum
 }
 
 function computePriceMomentum(
@@ -193,6 +194,7 @@ export function computeMomentumScore(input: MomentumInput): MomentumScoreResult 
     input.epsRevisionsUp30d != null || input.epsTrendCurrent != null
 
   let score: number
+  const priceOnly = !hasEpsData
   if (hasEpsData) {
     score = Math.round(priceResult.score * 0.4 + epsResult.score * 0.6)
   } else {
@@ -200,8 +202,14 @@ export function computeMomentumScore(input: MomentumInput): MomentumScoreResult 
     score = priceResult.score
   }
 
+  const details = { ...priceResult.details, ...epsResult.details }
+  if (priceOnly) {
+    details.warning = "No EPS revision data — momentum score based on price action only (less reliable)"
+  }
+
   return {
     score: Math.max(0, Math.min(100, score)),
-    details: { ...priceResult.details, ...epsResult.details },
+    details,
+    priceOnly,
   }
 }
