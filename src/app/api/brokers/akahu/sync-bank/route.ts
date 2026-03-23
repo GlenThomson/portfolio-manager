@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { fetchAllAccounts, getPersonalUserToken } from "@/lib/brokers/akahu"
+import { fetchAllAccounts } from "@/lib/brokers/akahu"
 import { createClient, getServerUserId } from "@/lib/supabase/server"
 
 export const maxDuration = 60
@@ -22,10 +22,10 @@ export async function POST() {
     .limit(1)
     .single()
 
-  const accessToken = connection?.access_token ?? getPersonalUserToken()
+  const accessToken = connection?.access_token
   if (!accessToken) {
     return NextResponse.json(
-      { error: "No Akahu connection found. Connect via Settings or Investments page." },
+      { error: "No Akahu connection found. Connect via Settings to sync bank accounts." },
       { status: 400 }
     )
   }
