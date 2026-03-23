@@ -118,12 +118,23 @@ export default function InvestmentsPage() {
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [syncMessage, setSyncMessage] = useState("")
+  const [akahuConnected, setAkahuConnected] = useState<boolean | null>(null)
+  const [akahuConnectOpen, setAkahuConnectOpen] = useState(false)
+  const [akahuAppToken, setAkahuAppToken] = useState("")
+  const [akahuUserToken, setAkahuUserToken] = useState("")
+  const [connecting, setConnecting] = useState(false)
   const { fmtHome, fmtLocal, homeCurrency, fxRate } = useCurrency()
 
   const fetchData = useCallback(async () => {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
+
+    // Check Akahu connection status
+    fetch("/api/brokers/akahu/status")
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d) setAkahuConnected(d.connected) })
+      .catch(() => {})
 
     const [portfolioRes, positionsRes, assetsRes] = await Promise.all([
       supabase.from("portfolios").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
@@ -198,6 +209,10 @@ export default function InvestmentsPage() {
   }
 
   const handleBankSync = async () => {
+    if (akahuConnected === false) {
+      setAkahuConnectOpen(true)
+      return
+    }
     setSyncing(true)
     setSyncMessage("")
     try {
@@ -208,11 +223,50 @@ export default function InvestmentsPage() {
         fetchData()
       } else {
         const err = await res.json()
-        setSyncMessage(`Error: ${err.error}`)
+        if (res.status === 400) {
+          setAkahuConnectOpen(true)
+        } else {
+          setSyncMessage(`Error: ${err.error}`)
+        }
       }
     } catch {
       setSyncMessage("Error: Network error")
     }
+    setSyncing(false)
+  }
+
+  const handleAkahuConnect = async () => {
+    if (!akahuAppToken.trim() || !akahuUserToken.trim()) return
+    setConnecting(true)
+    setSyncMessage("")
+    try {
+      const res = await fetch("/api/brokers/akahu/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ appToken: akahuAppToken.trim(), userToken: akahuUserToken.trim() }),
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        setSyncMessage(`Error: ${data.error || "Failed to connect"}`)
+        setConnecting(false)
+        return
+      }
+      setAkahuAppToken("")
+      setAkahuUserToken("")
+      setAkahuConnectOpen(false)
+      setAkahuConnected(true)
+      // Auto-sync after connecting
+      setSyncing(true)
+      const syncRes = await fetch("/api/brokers/akahu/sync-bank", { method: "POST" })
+      if (syncRes.ok) {
+        const result = await syncRes.json()
+        setSyncMessage(`Connected! ${result.balancesUpdated} bank balance${result.balancesUpdated !== 1 ? "s" : ""} synced.`)
+        fetchData()
+      }
+    } catch {
+      setSyncMessage("Error: Network error")
+    }
+    setConnecting(false)
     setSyncing(false)
   }
 
@@ -562,6 +616,48 @@ export default function InvestmentsPage() {
             asset={editingAsset}
             onSaved={() => { setAssetDialogOpen(false); setEditingAsset(null); fetchData() }}
           />
+
+          {/* Akahu Connect Dialog */}
+          <Dialog open={akahuConnectOpen} onOpenChange={setAkahuConnectOpen}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Connect Bank via Akahu</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Connect your bank accounts via Akahu (NZ open banking) to automatically sync balances.
+                  Create a free personal app at{" "}
+                  <a href="https://my.akahu.nz/apps" target="_blank" rel="noopener noreferrer" className="underline text-primary">
+                    my.akahu.nz
+                  </a>
+                  , connect your bank, then paste your tokens below.
+                </p>
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    placeholder="App Token (app_token_...)"
+                    className="w-full text-sm rounded-md border bg-background px-3 py-2"
+                    value={akahuAppToken}
+                    onChange={(e) => setAkahuAppToken(e.target.value)}
+                  />
+                  <input
+                    type="text"
+                    placeholder="User Token (user_token_...)"
+                    className="w-full text-sm rounded-md border bg-background px-3 py-2"
+                    value={akahuUserToken}
+                    onChange={(e) => setAkahuUserToken(e.target.value)}
+                  />
+                </div>
+                <Button
+                  onClick={handleAkahuConnect}
+                  disabled={connecting || !akahuAppToken.trim() || !akahuUserToken.trim()}
+                  className="w-full"
+                >
+                  {connecting ? "Connecting..." : "Connect & Sync"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
         </>
       )}
     </div>
