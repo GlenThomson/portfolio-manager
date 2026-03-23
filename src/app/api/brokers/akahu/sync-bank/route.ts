@@ -23,7 +23,8 @@ export async function POST() {
     .single()
 
   const accessToken = connection?.access_token
-  if (!accessToken) {
+  const appToken = connection?.account_id
+  if (!accessToken || !appToken) {
     return NextResponse.json(
       { error: "No Akahu connection found. Connect via Settings to sync bank accounts." },
       { status: 400 }
@@ -31,7 +32,7 @@ export async function POST() {
   }
 
   try {
-    const accounts = await fetchAllAccounts(accessToken)
+    const accounts = await fetchAllAccounts(accessToken, appToken)
 
     // Map Akahu account types to our asset types
     const ACCOUNT_TYPE_MAP: Record<string, string> = {
