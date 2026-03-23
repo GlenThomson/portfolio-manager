@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getOptions } from "@/lib/market/yahoo"
-import { blackScholesGreeks, premiumYield, ivStats, ivRank } from "@/lib/market/options-math"
+import { getOptions, getChart } from "@/lib/market/yahoo"
+import { blackScholesGreeks, premiumYield, ivStats, ivRank, historicalVolatility, pendulumScore } from "@/lib/market/options-math"
 import { isValidSymbol } from "@/lib/validation"
 import type { OptionContract, OptionsChainData } from "@/types/market"
 
@@ -16,10 +16,12 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const raw = await getOptions(
-      symbol.toUpperCase(),
-      expiration ? parseInt(expiration) : undefined
-    )
+    // Fetch options chain + 60 days of price history in parallel
+    const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]
+    const [raw, chartData] = await Promise.all([
+      getOptions(symbol.toUpperCase(), expiration ? parseInt(expiration) : undefined),
+      getChart(symbol.toUpperCase(), sixtyDaysAgo, "1d").catch(() => []),
+    ])
 
     if (raw.expirationDates.length === 0) {
       return NextResponse.json({ error: "No options available for this symbol" }, { status: 404 })
@@ -61,6 +63,45 @@ export async function GET(request: NextRequest) {
       ? (atmContracts.reduce((s, c) => s + c.impliedVolatility, 0) / atmContracts.length) * 100
       : stats.avg
 
+    // Compute Historical Volatility from price data
+    const closes = Array.isArray(chartData) ? chartData.map((d: { close: number }) => d.close).filter(Boolean) : []
+    const hv = historicalVolatility(closes)
+
+    // Compute put/call skew from OTM options near the money (within 10% of underlying)
+    const otmPuts = raw.puts.filter((c: { strike: number; impliedVolatility: number }) =>
+      c.strike < S && c.strike > S * 0.9 && c.impliedVolatility > 0.001
+    )
+    const otmCalls = raw.calls.filter((c: { strike: number; impliedVolatility: number }) =>
+      c.strike > S && c.strike < S * 1.1 && c.impliedVolatility > 0.001
+    )
+    const putAvgIV = otmPuts.length > 0
+      ? (otmPuts.reduce((s: number, c: { impliedVolatility: number }) => s + c.impliedVolatility, 0) / otmPuts.length) * 100
+      : 0
+    const callAvgIV = otmCalls.length > 0
+      ? (otmCalls.reduce((s: number, c: { impliedVolatility: number }) => s + c.impliedVolatility, 0) / otmCalls.length) * 100
+      : 0
+
+    // Avg premium yield for near-ATM OTM puts
+    const nearPuts = puts.filter((c: OptionContract) =>
+      c.strike < S && c.strike > S * 0.95 && (c.premiumYield ?? 0) > 0
+    )
+    const avgYield = nearPuts.length > 0
+      ? nearPuts.reduce((s: number, c: OptionContract) => s + (c.premiumYield ?? 0), 0) / nearPuts.length
+      : 0
+
+    const computedIvRank = Math.round(ivRank(atmIV, stats.low, stats.high))
+
+    // Compute pendulum score
+    const pendulum = pendulumScore({
+      ivRank: computedIvRank,
+      atmIV,
+      hvAnnualized: hv.hvAnnualized,
+      putAvgIV,
+      callAvgIV,
+      avgPremiumYield: avgYield,
+      hv20: hv.hv20,
+    })
+
     const result: OptionsChainData = {
       symbol: symbol.toUpperCase(),
       underlyingPrice: S,
@@ -74,8 +115,9 @@ export async function GET(request: NextRequest) {
         high: Math.round(stats.high * 10) / 10,
         low: Math.round(stats.low * 10) / 10,
         median: Math.round(stats.median * 10) / 10,
-        rank: Math.round(ivRank(atmIV, stats.low, stats.high)),
+        rank: computedIvRank,
       },
+      pendulum,
     }
 
     return NextResponse.json(result, {

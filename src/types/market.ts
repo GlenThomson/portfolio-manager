@@ -73,4 +73,14 @@ export interface OptionsChainData {
     median: number
     rank: number // 0-100
   }
+  pendulum?: {
+    score: number
+    label: string
+    ivRankSignal: number
+    ivHvSignal: number
+    skewSignal: number
+    yieldSignal: number
+    hv20: number
+    hvAnnualized: number
+  }
 }

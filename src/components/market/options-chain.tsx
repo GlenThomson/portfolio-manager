@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from "react"
 import { cn } from "@/lib/utils"
 import type { OptionsChainData, OptionContract } from "@/types/market"
 import { Loader2 } from "lucide-react"
+import { OptionsPendulum } from "./options-pendulum"
 
 // ── Helpers ─────────────────────────────────────────────────
 
@@ -192,6 +193,9 @@ export function OptionsChain({ symbol }: OptionsChainProps) {
           </div>
         </div>
       </div>
+
+      {/* ── Options Pendulum ─────────────────────────────── */}
+      {data.pendulum && <OptionsPendulum data={data.pendulum} />}
 
       {/* ── Controls Row ─────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">
