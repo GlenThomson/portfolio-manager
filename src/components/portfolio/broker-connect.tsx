@@ -58,6 +58,9 @@ export function BrokerConnectDialog({
   const [akahuConnecting, setAkahuConnecting] = useState(false)
   const [akahuAppToken, setAkahuAppToken] = useState("")
   const [akahuUserToken, setAkahuUserToken] = useState("")
+  const [ibkrConnecting, setIbkrConnecting] = useState(false)
+  const [ibkrToken, setIbkrToken] = useState("")
+  const [ibkrQueryId, setIbkrQueryId] = useState("")
   const [unresolvedTickers, setUnresolvedTickers] = useState<string[]>([])
   const [tickerOverrides, setTickerOverrides] = useState<Record<string, string>>({})
   const [uploading, setUploading] = useState(false)
@@ -184,6 +187,7 @@ export function BrokerConnectDialog({
     setCsvFile(file)
 
     try {
+      // First check if it's an IBKR Activity Statement — if so and we have portfolioId, import directly
       const formData = new FormData()
       formData.append("file", file)
 
@@ -197,19 +201,48 @@ export function BrokerConnectDialog({
         throw new Error(data.error || "Failed to parse CSV")
       }
 
-      const { headers, preview } = await res.json()
-      setCsvHeaders(headers)
-      setCsvPreview(preview)
-      setColumnMap(autoDetectMapping(headers))
-      setCashColumns(detectCashColumns(headers))
+      const data = await res.json()
+
+      if (data.ibkrDetected && portfolioId) {
+        // Auto-import IBKR Activity Statement — skip mapping step
+        setUploading(false)
+        setImporting(true)
+
+        const importForm = new FormData()
+        importForm.append("file", file)
+        importForm.append("portfolioId", portfolioId)
+
+        const importRes = await fetch("/api/brokers/csv-import", {
+          method: "POST",
+          body: importForm,
+        })
+
+        if (!importRes.ok) {
+          const errData = await importRes.json()
+          throw new Error(errData.error || "Import failed")
+        }
+
+        const importData = await importRes.json()
+        setResult(importData)
+        setCsvStep("done")
+        onImportComplete()
+        setImporting(false)
+        return
+      }
+
+      setCsvHeaders(data.headers)
+      setCsvPreview(data.preview)
+      setColumnMap(autoDetectMapping(data.headers))
+      setCashColumns(detectCashColumns(data.headers))
       setShowSkipped(false)
       setCsvStep("map")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to parse CSV")
+      setImporting(false)
     } finally {
       setUploading(false)
     }
-  }, [])
+  }, [portfolioId, onImportComplete])
 
   async function handleImport() {
     if (!csvFile) return
@@ -384,6 +417,52 @@ export function BrokerConnectDialog({
     }
   }
 
+  async function handleIBKRConnect() {
+    setIbkrConnecting(true)
+    setError(null)
+    setResult(null)
+
+    try {
+      const res = await fetch("/api/brokers/ibkr/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: ibkrToken.trim(), queryId: ibkrQueryId.trim() }),
+      })
+
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Failed to connect")
+
+      setIbkrToken("")
+      setIbkrQueryId("")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to connect")
+      setIbkrConnecting(false)
+      return
+    }
+
+    // Auto-sync after connecting
+    try {
+      const syncRes = await fetch("/api/brokers/ibkr/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ portfolioId }),
+      })
+
+      if (!syncRes.ok) {
+        const data = await syncRes.json()
+        throw new Error(data.error || "Sync failed")
+      }
+
+      const syncData = await syncRes.json()
+      setResult(syncData)
+      onImportComplete()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Connected but sync failed — try the Sync button")
+    } finally {
+      setIbkrConnecting(false)
+    }
+  }
+
   async function handleIBKRSync() {
     setSyncing(true)
     setError(null)
@@ -538,8 +617,8 @@ export function BrokerConnectDialog({
           {/* ── Interactive Brokers Tab ──────────────────── */}
           <TabsContent value="ibkr" className="space-y-4 mt-4">
             <p className="text-sm text-muted-foreground">
-              Connect your Interactive Brokers account to sync positions automatically.
-              Uses read-only access — no trading permissions.
+              Connect your Interactive Brokers account to sync positions daily.
+              Read-only — no trading permissions.
             </p>
 
             {ibkrConnected ? (
@@ -558,11 +637,45 @@ export function BrokerConnectDialog({
                 </Button>
               </div>
             ) : (
-              <Button asChild className="w-full">
-                <a href={`/api/brokers/ibkr/authorize?portfolioId=${portfolioId}`}>
-                  Connect Interactive Brokers
-                </a>
-              </Button>
+              <div className="space-y-3">
+                <div className="rounded-md border border-border p-3 space-y-3">
+                  <p className="text-sm font-medium">Connect with IBKR Reporting</p>
+                  <p className="text-xs text-muted-foreground">
+                    In your IBKR Client Portal, go to{" "}
+                    <span className="font-medium text-foreground">Settings → Reporting → Third-Party Services</span>
+                    {" "}and enable PortfolioAI. You&apos;ll receive a Token and Query ID.
+                  </p>
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      placeholder="Token"
+                      className="w-full text-sm rounded-md border bg-background px-3 py-2"
+                      value={ibkrToken}
+                      onChange={(e) => setIbkrToken(e.target.value)}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Query ID"
+                      className="w-full text-sm rounded-md border bg-background px-3 py-2"
+                      value={ibkrQueryId}
+                      onChange={(e) => setIbkrQueryId(e.target.value)}
+                    />
+                  </div>
+                  <Button
+                    onClick={handleIBKRConnect}
+                    disabled={ibkrConnecting || !ibkrToken.trim() || !ibkrQueryId.trim()}
+                    className="w-full"
+                  >
+                    {ibkrConnecting ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : null}
+                    Connect
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground text-center">
+                  Or upload an IBKR Activity Statement CSV via the CSV Import tab.
+                </p>
+              </div>
             )}
           </TabsContent>
 
