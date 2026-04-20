@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { fetchInvestmentAccounts, getPersonalUserToken } from "@/lib/brokers/akahu"
 import { resolveTickersBatch } from "@/lib/brokers/ticker-resolver"
 import { createClient, getServerUserId } from "@/lib/supabase/server"
+import { nudgeNewPosition } from "@/lib/digest/nudge"
 
 export const maxDuration = 60
 
@@ -158,6 +159,8 @@ export async function POST(request: NextRequest) {
           average_cost: holding.pricePerUnit.toString(),
           asset_type: "stock",
         })
+        // Nudge user to add a plan for this new holding (non-blocking)
+        nudgeNewPosition(userId, holding.symbol, supabase)
       }
 
       // Record transaction for audit trail

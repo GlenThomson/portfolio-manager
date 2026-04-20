@@ -18,6 +18,9 @@ export const transactionActionEnum = pgEnum("transaction_action", ["buy", "sell"
 export const chatRoleEnum = pgEnum("chat_role", ["user", "assistant", "system"])
 export const alertConditionEnum = pgEnum("alert_condition", ["above", "below", "pct_change"])
 export const brokerEnum = pgEnum("broker", ["ibkr", "sharesies", "akahu"])
+export const planStateEnum = pgEnum("plan_state", ["drafted", "active", "needs_attention", "closed", "invalidated"])
+export const planReviewFrequencyEnum = pgEnum("plan_review_frequency", ["weekly", "monthly", "on_earnings", "on_event"])
+export const inboxSeverityEnum = pgEnum("inbox_severity", ["info", "warning", "urgent"])
 
 // ── User Profiles ──────────────────────────────────────
 
@@ -173,5 +176,54 @@ export const marketDataCache = pgTable("market_data_cache", {
   period: text("period").notNull(),
   data: jsonb("data").notNull(),
   expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+})
+
+// ── Position Plans ─────────────────────────────────────
+
+export const positionPlans = pgTable("position_plans", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull(),
+  symbol: text("symbol").notNull(),
+  state: planStateEnum("state").default("drafted").notNull(),
+  entryThesis: text("entry_thesis"),
+  targetPrice: numeric("target_price", { precision: 18, scale: 4 }),
+  targetEvent: text("target_event"),
+  targetDate: timestamp("target_date", { mode: "date" }),
+  stopPrice: numeric("stop_price", { precision: 18, scale: 4 }),
+  stopCondition: text("stop_condition"),
+  reviewFrequency: planReviewFrequencyEnum("review_frequency").default("monthly").notNull(),
+  reviewNextDate: timestamp("review_next_date", { mode: "date" }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+})
+
+// ── Inbox Items ────────────────────────────────────────
+
+export const inboxItems = pgTable("inbox_items", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull(),
+  type: text("type").notNull(),
+  severity: inboxSeverityEnum("severity").default("info").notNull(),
+  title: text("title").notNull(),
+  body: text("body"),
+  symbol: text("symbol"),
+  actionUrl: text("action_url"),
+  metadata: jsonb("metadata").default({}),
+  readAt: timestamp("read_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+})
+
+// ── Digest Runs ────────────────────────────────────────
+
+export const digestRuns = pgTable("digest_runs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull(),
+  digestDate: timestamp("digest_date", { mode: "date" }).notNull(),
+  content: jsonb("content").notNull(),
+  emailSentAt: timestamp("email_sent_at"),
+  emailError: text("email_error"),
+  openedAt: timestamp("opened_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 })
