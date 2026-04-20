@@ -22,6 +22,9 @@ import type { OHLC } from "@/types/market"
 import { cn } from "@/lib/utils"
 import { DrawingToolbar, DrawingOverlay, useDrawings } from "./drawing-tools"
 import type { DrawingToolType } from "./drawing-tools"
+import { Maximize2, Minimize2 } from "lucide-react"
+
+const COMPACT_HEIGHT = 380
 
 // ── Constants ────────────────────────────────────────────
 
@@ -156,6 +159,24 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
   })
   const menuRef = useRef<HTMLDivElement>(null)
   const [chartDimensions, setChartDimensions] = useState({ width: 0, height: 0 })
+  const [expanded, setExpanded] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("chart-expanded") === "true"
+    }
+    return false
+  })
+  const expandedRef = useRef(expanded)
+  expandedRef.current = expanded
+  const chartApiRef = useRef<IChartApi | null>(null)
+  const toggleExpanded = useCallback(() => {
+    setExpanded((prev) => {
+      const next = !prev
+      if (typeof window !== "undefined") localStorage.setItem("chart-expanded", String(next))
+      const h = next ? Math.max(400, window.innerHeight - 200) : COMPACT_HEIGHT
+      chartApiRef.current?.applyOptions({ height: h })
+      return next
+    })
+  }, [])
 
   // Drawing tools
   const drawingTools = useDrawings(symbol)
@@ -378,10 +399,12 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
     const series: Record<string, ISeriesApi<any>> = {}
 
     // ── Main chart ──────────────────────────────────────
+    const initialHeight = expandedRef.current ? Math.max(400, window.innerHeight - 200) : COMPACT_HEIGHT
     const mainChart = createChart(container, {
       ...chartOptions,
-      height: Math.max(400, window.innerHeight - 300),
+      height: initialHeight,
     })
+    chartApiRef.current = mainChart
 
     series["candle"] = mainChart.addSeries(CandlestickSeries, {
       upColor: UP_COLOR,
@@ -572,7 +595,7 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
     const allCharts = [mainChart, rsiChart, macdChart].filter(Boolean) as IChartApi[]
 
     const handleResize = () => {
-      const newHeight = Math.max(400, window.innerHeight - 300)
+      const newHeight = expandedRef.current ? Math.max(400, window.innerHeight - 200) : COMPACT_HEIGHT
       mainChart.applyOptions({ height: newHeight })
     }
     window.addEventListener("resize", handleResize)
@@ -895,6 +918,16 @@ export function StockChart({ symbol, data, onPeriodChange, activeInterval, onLoa
             </span>
           ))}
         </div>
+
+        {/* Expand / collapse toggle */}
+        <button
+          onClick={toggleExpanded}
+          className="ml-auto p-1 rounded text-[#787b86] hover:text-[#d1d4dc] hover:bg-[#1e222d] transition-colors"
+          title={expanded ? "Collapse chart" : "Expand chart"}
+          aria-label={expanded ? "Collapse chart" : "Expand chart"}
+        >
+          {expanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+        </button>
       </div>
 
       {/* ── Chart area with drawing toolbar ────────────── */}

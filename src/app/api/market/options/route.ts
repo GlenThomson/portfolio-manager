@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getOptions } from "@/lib/market/yahoo"
-import { blackScholesGreeks, premiumYield, ivStats, ivRank } from "@/lib/market/options-math"
+import { getOptions, getChart } from "@/lib/market/yahoo"
+import { blackScholesGreeks, premiumYield, ivStats, ivRank, historicalVolatility, pendulumScore, rollingHistoricalVolatility } from "@/lib/market/options-math"
 import { isValidSymbol } from "@/lib/validation"
 import type { OptionContract, OptionsChainData } from "@/types/market"
 
@@ -16,10 +16,13 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const raw = await getOptions(
-      symbol.toUpperCase(),
-      expiration ? parseInt(expiration) : undefined
-    )
+    // Fetch options chain and ~13 months of price history in parallel
+    // (need extra 20 days beyond 252 trading days for the rolling HV window)
+    const chartStart = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]
+    const [raw, chartData] = await Promise.all([
+      getOptions(symbol.toUpperCase(), expiration ? parseInt(expiration) : undefined),
+      getChart(symbol.toUpperCase(), chartStart, "1d").catch(() => null),
+    ])
 
     if (raw.expirationDates.length === 0) {
       return NextResponse.json({ error: "No options available for this symbol" }, { status: 404 })
@@ -61,6 +64,44 @@ export async function GET(request: NextRequest) {
       ? (atmContracts.reduce((s, c) => s + c.impliedVolatility, 0) / atmContracts.length) * 100
       : stats.avg
 
+    // ── Pendulum computation ──────────────────────────────
+    const ivRankVal = Math.round(ivRank(atmIV, stats.low, stats.high))
+
+    // Historical volatility from chart closes
+    const bars = (chartData ?? []).filter((q: { close: number }) => q.close > 0)
+    const closes = bars.map((q: { close: number }) => q.close)
+    const hv = historicalVolatility(closes)
+    // Rolling 20-day annualised HV over the last ~12 months (trim to last 252 points)
+    const hvHistory = rollingHistoricalVolatility(bars, 20).slice(-252)
+    // Rolling 10-day HV for a faster-reacting signal
+    const hvHistory10 = rollingHistoricalVolatility(bars, 10).slice(-252)
+
+    // OTM put/call average IV for skew
+    const otmPuts = raw.puts.filter((p: { inTheMoney: boolean; impliedVolatility: number }) =>
+      !p.inTheMoney && p.impliedVolatility > 0.001 && Math.abs(p.strike - S) / S < 0.15
+    )
+    const otmCalls = raw.calls.filter((c: { inTheMoney: boolean; impliedVolatility: number; strike: number }) =>
+      !c.inTheMoney && c.impliedVolatility > 0.001 && Math.abs(c.strike - S) / S < 0.15
+    )
+    const avgPutIV = otmPuts.length > 0
+      ? otmPuts.reduce((s: number, p: { impliedVolatility: number }) => s + p.impliedVolatility, 0) / otmPuts.length
+      : 0
+    const avgCallIV = otmCalls.length > 0
+      ? otmCalls.reduce((s: number, c: { impliedVolatility: number }) => s + c.impliedVolatility, 0) / otmCalls.length
+      : 0
+
+    // Average premium yield for near-ATM OTM puts
+    const nearPuts = puts.filter((p) => !p.inTheMoney && (p.premiumYield ?? 0) > 0 && Math.abs(p.strike - S) / S < 0.10)
+    const avgYield = nearPuts.length > 0
+      ? nearPuts.reduce((s, p) => s + (p.premiumYield ?? 0), 0) / nearPuts.length
+      : 0
+
+    const pendulum = pendulumScore(ivRankVal, atmIV, hv.hvAnnualized, avgPutIV, avgCallIV, avgYield, dte, hvHistory)
+    pendulum.hv20 = hv.hv20
+    pendulum.hvAnnualized = hv.hvAnnualized
+    pendulum.hvHistory = hvHistory
+    pendulum.hvHistory10 = hvHistory10
+
     const result: OptionsChainData = {
       symbol: symbol.toUpperCase(),
       underlyingPrice: S,
@@ -74,8 +115,9 @@ export async function GET(request: NextRequest) {
         high: Math.round(stats.high * 10) / 10,
         low: Math.round(stats.low * 10) / 10,
         median: Math.round(stats.median * 10) / 10,
-        rank: Math.round(ivRank(atmIV, stats.low, stats.high)),
+        rank: ivRankVal,
       },
+      pendulum,
     }
 
     return NextResponse.json(result, {
