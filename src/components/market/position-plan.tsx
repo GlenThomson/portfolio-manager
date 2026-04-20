@@ -44,9 +44,10 @@ const TEXT = "#d1d4dc"
 interface PositionPlanProps {
   symbol: string
   currentPrice?: number
+  onChange?: () => void
 }
 
-export function PositionPlan({ symbol, currentPrice }: PositionPlanProps) {
+export function PositionPlan({ symbol, currentPrice, onChange }: PositionPlanProps) {
   const [plan, setPlan] = useState<PositionPlan | null>(null)
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
@@ -153,6 +154,7 @@ export function PositionPlan({ symbol, currentPrice }: PositionPlanProps) {
       setForm(data)
       setEditing(false)
       setMessage("Plan saved")
+      onChange?.()
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Save failed")
     } finally {
@@ -168,6 +170,7 @@ export function PositionPlan({ symbol, currentPrice }: PositionPlanProps) {
       setPlan(null)
       setForm(EMPTY_PLAN(symbol))
       setEditing(false)
+      onChange?.()
     } catch {
       setMessage("Delete failed")
     }

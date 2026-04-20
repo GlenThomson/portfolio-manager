@@ -6,6 +6,7 @@ import { TableCell, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { ChevronDown, ChevronRight, Loader2 } from "lucide-react"
 import { useCurrency } from "@/hooks/useCurrency"
+import { PositionPlan } from "@/components/market/position-plan"
 
 interface Transaction {
   id: string
@@ -25,6 +26,7 @@ interface PositionDetailRowProps {
   averageCost: number
   currentPrice: number
   colSpan: number
+  onPlanChange?: () => void
 }
 
 export function PositionDetailRow({
@@ -34,6 +36,7 @@ export function PositionDetailRow({
   averageCost,
   currentPrice,
   colSpan,
+  onPlanChange,
 }: PositionDetailRowProps) {
   const [expanded, setExpanded] = useState(false)
   const [transactions, setTransactions] = useState<Transaction[]>([])
@@ -98,6 +101,9 @@ export function PositionDetailRow({
             <ChevronDown className="h-4 w-4" />
             <span>{symbol} Position Details</span>
           </div>
+
+          {/* Position Plan (inline editor) */}
+          <PositionPlan symbol={symbol} currentPrice={currentPrice} onChange={onPlanChange} />
 
           {/* Cost Basis & P&L Summary */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

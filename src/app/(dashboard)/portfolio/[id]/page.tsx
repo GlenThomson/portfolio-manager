@@ -59,6 +59,7 @@ export default function PortfolioDetailPage() {
   const [positions, setPositions] = useState<Position[]>([])
   const [dividends, setDividends] = useState<DividendTransaction[]>([])
   const [quotes, setQuotes] = useState<Record<string, { price: number; change: number; changePct: number }>>({})
+  const [plans, setPlans] = useState<Record<string, { id: string; state: string }>>({})
   const [dialogOpen, setDialogOpen] = useState(false)
   const [importDialogOpen, setImportDialogOpen] = useState(false)
   const [ibkrConnected, setIbkrConnected] = useState(false)
@@ -133,6 +134,24 @@ export default function PortfolioDetailPage() {
     setPositions(positionsRes.data ?? [])
     setDividends(dividendsRes.data ?? [])
     setLoading(false)
+
+    // Fetch plans in parallel (non-blocking)
+    fetch("/api/plans").then((r) => r.ok ? r.json() : []).then((list) => {
+      const map: Record<string, { id: string; state: string }> = {}
+      for (const p of list ?? []) map[p.symbol] = { id: p.id, state: p.state }
+      setPlans(map)
+    }).catch(() => {})
+  }
+
+  async function refreshPlans() {
+    try {
+      const res = await fetch("/api/plans")
+      if (!res.ok) return
+      const list = await res.json()
+      const map: Record<string, { id: string; state: string }> = {}
+      for (const p of list ?? []) map[p.symbol] = { id: p.id, state: p.state }
+      setPlans(map)
+    } catch {}
   }
 
   async function fetchQuotes() {
@@ -615,6 +634,7 @@ export default function PortfolioDetailPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Symbol</TableHead>
+                  <TableHead>Plan</TableHead>
                   <TableHead className="text-right">Qty</TableHead>
                   <TableHead className="text-right">Avg Cost</TableHead>
                   <TableHead className="text-right">Price</TableHead>
@@ -648,6 +668,9 @@ export default function PortfolioDetailPage() {
                           >
                             {pos.symbol}
                           </Link>
+                        </TableCell>
+                        <TableCell>
+                          <PlanBadge plan={plans[pos.symbol]} symbol={pos.symbol} />
                         </TableCell>
                         <TableCell className="text-right">{qty}</TableCell>
                         <TableCell className="text-right">{fmtNative(avgCost)}</TableCell>
@@ -684,7 +707,8 @@ export default function PortfolioDetailPage() {
                           quantity={qty}
                           averageCost={avgCost}
                           currentPrice={price}
-                          colSpan={7}
+                          colSpan={8}
+                          onPlanChange={refreshPlans}
                         />
                       )}
                     </Fragment>
@@ -828,5 +852,35 @@ export default function PortfolioDetailPage() {
       {/* Transaction History with Filters */}
       <TransactionFilters portfolioId={portfolioId} />
     </div>
+  )
+}
+
+function PlanBadge({ plan, symbol }: { plan: { id: string; state: string } | undefined; symbol: string }) {
+  if (!plan) {
+    return (
+      <Link
+        href={`/stock/${symbol}?openPlan=1`}
+        onClick={(e) => e.stopPropagation()}
+        className="text-xs text-muted-foreground hover:text-primary hover:underline"
+      >
+        + Add plan
+      </Link>
+    )
+  }
+  const label = plan.state.replace("_", " ")
+  const color =
+    plan.state === "needs_attention" ? "bg-amber-500/15 text-amber-500 border-amber-500/30" :
+    plan.state === "invalidated" ? "bg-red-500/15 text-red-500 border-red-500/30" :
+    plan.state === "closed" ? "bg-muted text-muted-foreground border-border" :
+    plan.state === "active" ? "bg-emerald-500/15 text-emerald-500 border-emerald-500/30" :
+    "bg-blue-500/15 text-blue-500 border-blue-500/30" // drafted
+  return (
+    <Link
+      href={`/stock/${symbol}?openPlan=1`}
+      onClick={(e) => e.stopPropagation()}
+      className={`text-[10px] px-1.5 py-0.5 rounded border capitalize whitespace-nowrap hover:opacity-80 transition-opacity ${color}`}
+    >
+      {label}
+    </Link>
   )
 }
