@@ -29,6 +29,15 @@ export interface DigestActionItem {
   actionUrl?: string
 }
 
+export interface DigestRiskRow {
+  id: string
+  title: string
+  score: number | null
+  previousScore: number | null
+  delta: number | null
+  summary: string | null
+}
+
 export interface DigestContent {
   date: string // YYYY-MM-DD in user tz
   portfolio: {
@@ -44,6 +53,7 @@ export interface DigestContent {
   actionRequired: DigestActionItem[]
   positionsWithoutPlans: string[]
   positions: DigestPosition[]
+  risks: DigestRiskRow[]
 }
 
 // ── Service-role client (bypasses RLS for cron) ─────────
@@ -199,6 +209,34 @@ export async function generateDigestForUser(userId: string): Promise<DigestConte
   // 8. Positions without plans
   const positionsWithoutPlans = symbols.filter((s) => !planBySymbol.has(s))
 
+  // 9. Risks: most recent two scores per active monitor → row with delta
+  const { data: monitors } = await supabase
+    .from("risk_monitors")
+    .select("id, title, latest_score, latest_score_at")
+    .eq("user_id", userId)
+    .eq("is_active", true)
+
+  const risks: DigestRiskRow[] = []
+  for (const m of monitors ?? []) {
+    const { data: recent } = await supabase
+      .from("risk_scores")
+      .select("score, summary, computed_at")
+      .eq("monitor_id", m.id)
+      .order("computed_at", { ascending: false })
+      .limit(2)
+
+    const latest = recent?.[0]
+    const prev = recent?.[1]
+    risks.push({
+      id: m.id,
+      title: m.title,
+      score: latest ? Number(latest.score) : (m.latest_score != null ? Number(m.latest_score) : null),
+      previousScore: prev ? Number(prev.score) : null,
+      delta: latest && prev ? Number(latest.score) - Number(prev.score) : null,
+      summary: latest?.summary ?? null,
+    })
+  }
+
   return {
     date: new Date().toISOString().slice(0, 10),
     portfolio: {
@@ -211,6 +249,7 @@ export async function generateDigestForUser(userId: string): Promise<DigestConte
     actionRequired,
     positionsWithoutPlans,
     positions,
+    risks,
   }
 }
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient as createServiceClient } from "@supabase/supabase-js"
 import { generateDigestForUser, persistDigest } from "@/lib/digest/generate"
 import { sendDigestEmail } from "@/lib/email/digest"
+import { computeAllRisksForUser } from "@/lib/risks/compute"
 
 export const maxDuration = 60
 
@@ -70,6 +71,10 @@ export async function GET(request: NextRequest) {
     }
 
     try {
+      // Refresh all risk monitor scores first so the digest includes fresh numbers.
+      // Non-blocking for email — if this fails, digest still goes with stale risk scores.
+      try { await computeAllRisksForUser(profile.user_id) } catch {}
+
       const content = await generateDigestForUser(profile.user_id)
 
       // Skip empty portfolios silently

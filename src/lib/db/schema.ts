@@ -227,3 +227,32 @@ export const digestRuns = pgTable("digest_runs", {
   openedAt: timestamp("opened_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 })
+
+// ── Risk Monitors ──────────────────────────────────────
+
+export const riskMonitors = pgTable("risk_monitors", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  keywords: text("keywords").array().default([]).notNull(),
+  linkedTickers: text("linked_tickers").array().default([]).notNull(),
+  alertOnLevel: numeric("alert_on_level"),
+  alertOnChange: numeric("alert_on_change"),
+  latestScore: numeric("latest_score"),
+  latestScoreAt: timestamp("latest_score_at"),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+})
+
+export const riskScores = pgTable("risk_scores", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  monitorId: uuid("monitor_id").notNull().references(() => riskMonitors.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull(),
+  score: numeric("score").notNull(),
+  components: jsonb("components"),
+  headlines: jsonb("headlines"),
+  summary: text("summary"),
+  computedAt: timestamp("computed_at").defaultNow().notNull(),
+})

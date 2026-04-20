@@ -66,6 +66,41 @@ export function renderDigestHtml(content: DigestContent, displayName?: string): 
     `
     : ""
 
+  // Section: Risks
+  const { risks } = content
+  const risksToShow = risks.filter((r) =>
+    r.score != null && (r.score >= 40 || (r.delta != null && Math.abs(r.delta) >= 10))
+  )
+  const risksHtml = risks.length > 0
+    ? `
+      <h3 style="margin: 24px 0 8px; font-size: 13px; color: #666; text-transform: uppercase; letter-spacing: 0.5px;">Risk monitors</h3>
+      <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+        ${(risksToShow.length > 0 ? risksToShow : risks.slice(0, 3)).map((r) => {
+          const score = r.score ?? 0
+          const color = score >= 70 ? "#ef5350" : score >= 40 ? "#ff9500" : score >= 20 ? "#ffab00" : "#26a69a"
+          const deltaStr = r.delta != null && r.delta !== 0
+            ? `<span style="color: ${r.delta > 0 ? "#ef5350" : "#26a69a"}; font-size: 11px;">${r.delta > 0 ? "↑" : "↓"}${Math.abs(r.delta)}</span>`
+            : ""
+          return `
+            <tr>
+              <td style="padding: 6px 0; vertical-align: top;">
+                <div style="font-weight: 600;">${r.title}</div>
+                ${r.summary ? `<div style="font-size: 11px; color: #666; margin-top: 2px;">${r.summary}</div>` : ""}
+              </td>
+              <td style="padding: 6px 0; text-align: right; vertical-align: top; white-space: nowrap;">
+                <span style="font-size: 18px; font-weight: bold; color: ${color};">${Math.round(score)}</span>
+                ${deltaStr}
+              </td>
+            </tr>
+          `
+        }).join("")}
+      </table>
+      <p style="font-size: 11px; color: #999; margin: 4px 0;">
+        <a href="${APP_URL}/risks" style="color: #2962ff; text-decoration: none;">View all →</a>
+      </p>
+    `
+    : ""
+
   // Section: Positions without plans nudge
   const noPlanHtml = positionsWithoutPlans.length > 0
     ? `
@@ -100,6 +135,7 @@ export function renderDigestHtml(content: DigestContent, displayName?: string): 
         </div>
 
         ${actionHtml}
+        ${risksHtml}
         ${moversHtml}
         ${noPlanHtml}
 
