@@ -1,0 +1,3 @@
+want the earnings on the graph to show the resutls like on trading view when ou hover over it e.g the revunue expected eps ect. 
+
+I want to add the ability to add lines to the graph ect like you can in trading view 

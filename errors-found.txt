@@ -1,2 +1,2 @@
 For some reason the sharsies import of google buy price was way off. 
-the fear and greed graph needs to be imporved its squashed the line is to thick the axis lables are not good 
+the profit and loss graph tool can be dragged pas profit and passed loss both directions.

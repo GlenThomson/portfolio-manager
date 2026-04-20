@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from "next/server"
 import { parseCSVWithMapping, parseCSVHeaders } from "@/lib/brokers/csv-parser"
 import type { ColumnMapping, CashMapping } from "@/lib/brokers/csv-parser"
+import { parseActivityStatement } from "@/lib/brokers/ibkr"
 import { createClient, getServerUserId } from "@/lib/supabase/server"
+
+/** Detect if this is an IBKR Activity Statement (multi-section format) */
+function isIBKRActivityStatement(csvText: string): boolean {
+  const firstLines = csvText.slice(0, 500)
+  return firstLines.includes("Statement,") && firstLines.includes("Open Positions,")
+    || firstLines.includes("Statement,Header,Field Name")
+    || (firstLines.includes("BrokerName,Interactive Brokers") && firstLines.includes("Open Positions"))
+}
 
 /** POST with just a file → returns headers + preview for mapping step */
 /** POST with file + mapping → processes the import */
@@ -27,7 +36,87 @@ export async function POST(request: NextRequest) {
 
   const csvText = await file.text()
 
-  // Step 1: No mapping provided → return headers + preview for the UI
+  // Auto-detect IBKR Activity Statement and handle it directly (skip column mapping)
+  if (isIBKRActivityStatement(csvText) && portfolioId) {
+    const positions = parseActivityStatement(csvText)
+
+    if (positions.length === 0) {
+      return NextResponse.json({
+        error: "No open positions found in IBKR Activity Statement",
+      }, { status: 400 })
+    }
+
+    // Replace existing IBKR-imported positions if in replace mode
+    if (replaceMode) {
+      for (const pos of positions) {
+        await supabase
+          .from("portfolio_positions")
+          .delete()
+          .eq("portfolio_id", portfolioId)
+          .eq("user_id", userId)
+          .eq("symbol", pos.symbol)
+          .is("closed_at", null)
+      }
+    }
+
+    let imported = 0
+    let skipped = 0
+
+    for (const pos of positions) {
+      const { data: existing } = await supabase
+        .from("portfolio_positions")
+        .select("id")
+        .eq("portfolio_id", portfolioId)
+        .eq("symbol", pos.symbol)
+        .is("closed_at", null)
+        .limit(1)
+        .single()
+
+      if (existing && !replaceMode) {
+        skipped++
+        continue
+      }
+
+      await supabase.from("portfolio_positions").insert({
+        portfolio_id: portfolioId,
+        user_id: userId,
+        symbol: pos.symbol,
+        quantity: pos.quantity.toString(),
+        average_cost: pos.averageCost.toString(),
+        asset_type: pos.assetType,
+      })
+
+      await supabase.from("transactions").insert({
+        portfolio_id: portfolioId,
+        user_id: userId,
+        symbol: pos.symbol,
+        action: "buy",
+        quantity: pos.quantity.toString(),
+        price: pos.averageCost.toString(),
+        broker_ref: pos.brokerRef,
+      })
+
+      imported++
+    }
+
+    return NextResponse.json({
+      imported,
+      skipped,
+      total: positions.length,
+      ibkrDetected: true,
+    })
+  }
+
+  // If IBKR statement detected but no portfolioId (preview step), return auto-detect hint
+  if (isIBKRActivityStatement(csvText) && !mappingJson) {
+    return NextResponse.json({
+      headers: ["IBKR Activity Statement detected"],
+      preview: [],
+      ibkrDetected: true,
+    })
+  }
+
+  // Step 1: No mapping provided → return headers + preview for mapping step
   if (!mappingJson) {
     const { headers, preview } = parseCSVHeaders(csvText)
     return NextResponse.json({ headers, preview })
