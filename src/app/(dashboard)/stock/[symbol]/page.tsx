@@ -308,49 +308,54 @@ export default function StockDetailPage() {
         </div>
       </div>
 
-      {/* ── Chart (hero) ────────────────────────────────────── */}
-      {loading && chartData.length === 0 ? (
-        <div className="rounded-md flex items-center justify-center" style={{ background: "#131722", height: "calc(100vh - 300px)", minHeight: 300 }}>
-          <Loader2 className="h-6 w-6 animate-spin text-[#787b86]" />
-        </div>
-      ) : (
-        <StockChart
-          symbol={symbol}
-          data={chartData}
-          onPeriodChange={(period, interval) => {
-            setActivePeriod(period)
-            setActiveInterval(interval)
-          }}
-          activeInterval={activeInterval}
-          onLoadMore={handleLoadMore}
-          onCreateAlert={handleCreateAlert}
-          onRemoveAlert={handleRemoveAlert}
-          onMoveAlert={handleMoveAlert}
-          alerts={alerts}
-          events={chartEvents}
-        />
-      )}
+      {/* ── Chart + stats (single card) ───────────────────── */}
+      <div className="rounded-md overflow-hidden" style={{ background: "#131722" }}>
+        {loading && chartData.length === 0 ? (
+          <div className="flex items-center justify-center" style={{ height: 380 }}>
+            <Loader2 className="h-6 w-6 animate-spin text-[#787b86]" />
+          </div>
+        ) : (
+          <StockChart
+            symbol={symbol}
+            data={chartData}
+            onPeriodChange={(period, interval) => {
+              setActivePeriod(period)
+              setActiveInterval(interval)
+            }}
+            activeInterval={activeInterval}
+            onLoadMore={handleLoadMore}
+            onCreateAlert={handleCreateAlert}
+            onRemoveAlert={handleRemoveAlert}
+            onMoveAlert={handleMoveAlert}
+            alerts={alerts}
+            events={chartEvents}
+          />
+        )}
 
-      {/* ── Key stats strip ──────────────────────────────── */}
-      {quote && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-px rounded-md overflow-hidden" style={{ background: "#2a2e39" }}>
-          {[
-            { label: "Prev Close", value: fmtNative(quote.regularMarketPreviousClose) },
-            { label: "Open", value: fmtNative(quote.regularMarketOpen) },
-            { label: "Day Low", value: fmtNative(quote.regularMarketDayLow) },
-            { label: "Day High", value: fmtNative(quote.regularMarketDayHigh) },
-            { label: "52W Low", value: fmtNative(quote.fiftyTwoWeekLow) },
-            { label: "52W High", value: fmtNative(quote.fiftyTwoWeekHigh) },
-            { label: "Volume", value: formatVol(quote.regularMarketVolume) },
-            { label: "Mkt Cap", value: formatNum(quote.marketCap) },
-          ].map((stat) => (
-            <div key={stat.label} className="px-3 py-2.5" style={{ background: "#131722" }}>
-              <div className="text-[10px] uppercase tracking-wider" style={{ color: "#787b86" }}>{stat.label}</div>
-              <div className="text-xs font-medium" style={{ color: "#d1d4dc" }}>{stat.value}</div>
-            </div>
-          ))}
-        </div>
-      )}
+        {/* Stats strip — visually attached to chart */}
+        {quote && (
+          <div
+            className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-px border-t"
+            style={{ background: "#2a2e39", borderColor: "#2a2e39" }}
+          >
+            {[
+              { label: "Prev Close", value: fmtNative(quote.regularMarketPreviousClose) },
+              { label: "Open", value: fmtNative(quote.regularMarketOpen) },
+              { label: "Day Low", value: fmtNative(quote.regularMarketDayLow) },
+              { label: "Day High", value: fmtNative(quote.regularMarketDayHigh) },
+              { label: "52W Low", value: fmtNative(quote.fiftyTwoWeekLow) },
+              { label: "52W High", value: fmtNative(quote.fiftyTwoWeekHigh) },
+              { label: "Volume", value: formatVol(quote.regularMarketVolume) },
+              { label: "Mkt Cap", value: formatNum(quote.marketCap) },
+            ].map((stat) => (
+              <div key={stat.label} className="px-3 py-2" style={{ background: "#131722" }}>
+                <div className="text-[10px] uppercase tracking-wider" style={{ color: "#787b86" }}>{stat.label}</div>
+                <div className="text-xs font-medium" style={{ color: "#d1d4dc" }}>{stat.value}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* ── Tab bar ──────────────────────────────────────── */}
       <div className="flex gap-0.5 rounded-md p-1" style={{ background: "#131722" }}>

@@ -73,4 +73,19 @@ export interface OptionsChainData {
     median: number
     rank: number // 0-100
   }
+  pendulum?: {
+    score: number
+    label: string
+    context: "sell" | "buy" | "balanced"
+    ivRankSignal: number
+    ivHvSignal: number
+    skewSignal: number
+    yieldSignal: number
+    hv20: number
+    hvAnnualized: number
+    dte: number
+    atmIV: number // current ATM implied vol as percentage
+    hvHistory: { time: number; hv: number }[] // rolling 20d annualised HV, last ~12 months
+    hvHistory10?: { time: number; hv: number }[] // rolling 10d annualised HV, for faster signal
+  }
 }

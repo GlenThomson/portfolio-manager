@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from "react"
 import { cn } from "@/lib/utils"
 import type { OptionsChainData, OptionContract } from "@/types/market"
 import { Loader2 } from "lucide-react"
+import { OptionsPendulum } from "./options-pendulum"
 
 // ── Helpers ─────────────────────────────────────────────────
 
@@ -150,48 +151,19 @@ export function OptionsChain({ symbol }: OptionsChainProps) {
 
   return (
     <div className="space-y-3">
-      {/* ── IV Stats Banner ──────────────────────────────── */}
-      <div className="rounded-md p-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-          {/* IV Rank gauge */}
-          <div className="flex items-center gap-3">
-            <div>
-              <div className="text-[10px] uppercase tracking-wider" style={{ color: TEXT_DIM }}>IV Rank</div>
-              <div className="text-lg font-bold" style={{ color: ivRankColor(data.ivStats.rank) }}>
-                {data.ivStats.rank}
-              </div>
-            </div>
-            <div className="w-24 h-2 rounded-full overflow-hidden" style={{ background: "#1e222d" }}>
-              <div
-                className="h-full rounded-full transition-all"
-                style={{
-                  width: `${data.ivStats.rank}%`,
-                  background: ivRankColor(data.ivStats.rank),
-                }}
-              />
-            </div>
-          </div>
-
-          <StatCell label="ATM IV" value={`${data.ivStats.median.toFixed(1)}%`} />
-          <StatCell label="IV High" value={`${data.ivStats.high.toFixed(1)}%`} />
-          <StatCell label="IV Low" value={`${data.ivStats.low.toFixed(1)}%`} />
-          <StatCell label="DTE" value={data.daysToExpiry.toString()} />
-          <StatCell label="Underlying" value={`$${data.underlyingPrice.toFixed(2)}`} />
-
-          {/* Selling signal */}
-          <div className="ml-auto">
-            {data.ivStats.rank >= 50 ? (
-              <span className="text-xs px-2 py-1 rounded font-medium" style={{ background: "rgba(38,166,154,0.15)", color: "#26a69a" }}>
-                IV elevated — good for selling
-              </span>
-            ) : (
-              <span className="text-xs px-2 py-1 rounded font-medium" style={{ background: "rgba(239,83,80,0.1)", color: TEXT_DIM }}>
-                IV low — less premium available
-              </span>
-            )}
+      {/* ── Options Signal Banner ─────────────────────────── */}
+      {data.pendulum ? (
+        <OptionsPendulum data={data.pendulum} ivStats={data.ivStats} underlyingPrice={data.underlyingPrice} daysToExpiry={data.daysToExpiry} />
+      ) : (
+        <div className="rounded-md p-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+            <StatCell label="IV Rank" value={`${data.ivStats.rank}`} />
+            <StatCell label="ATM IV" value={`${data.ivStats.median.toFixed(1)}%`} />
+            <StatCell label="DTE" value={data.daysToExpiry.toString()} />
+            <StatCell label="Underlying" value={`$${data.underlyingPrice.toFixed(2)}`} />
           </div>
         </div>
-      </div>
+      )}
 
       {/* ── Controls Row ─────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">
@@ -322,12 +294,6 @@ function StatCell({ label, value }: { label: string; value: string }) {
       <div className="text-sm font-medium" style={{ color: TEXT }}>{value}</div>
     </div>
   )
-}
-
-function ivRankColor(rank: number): string {
-  if (rank >= 70) return "#26a69a" // high IV = good for selling
-  if (rank >= 40) return "#ffab00"
-  return "#ef5350" // low IV
 }
 
 // ── Row builder ─────────────────────────────────────────────
