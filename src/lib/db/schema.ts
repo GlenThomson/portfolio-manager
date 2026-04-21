@@ -237,6 +237,7 @@ export const riskMonitors = pgTable("risk_monitors", {
   description: text("description"),
   keywords: text("keywords").array().default([]).notNull(),
   linkedTickers: text("linked_tickers").array().default([]).notNull(),
+  providers: jsonb("providers").default(["news"]).notNull(),
   alertOnLevel: numeric("alert_on_level"),
   alertOnChange: numeric("alert_on_change"),
   latestScore: numeric("latest_score"),

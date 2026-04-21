@@ -11,11 +11,19 @@ interface Props {
   onCreated: () => void
 }
 
+const PROVIDERS = [
+  { key: "news", label: "News sentiment", description: "AI scans recent headlines and scores severity." },
+  { key: "market", label: "Market signals", description: "Tracks volatility and drawdowns in linked tickers." },
+  { key: "polymarket", label: "Prediction markets", description: "Aggregates implied probabilities from Polymarket." },
+  { key: "taiwan_incursions", label: "PLA ADIZ incursions", description: "Extracts PLA aircraft/vessel counts from Taiwan news (Taiwan-specific)." },
+] as const
+
 export function RiskCreateDialog({ open, onOpenChange, onCreated }: Props) {
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
   const [keywords, setKeywords] = useState<string[]>([])
   const [linkedTickers, setLinkedTickers] = useState<string[]>([])
+  const [providers, setProviders] = useState<string[]>(["news"])
   const [alertOnLevel, setAlertOnLevel] = useState<string>("")
   const [alertOnChange, setAlertOnChange] = useState<string>("")
   const [suggesting, setSuggesting] = useState(false)
@@ -27,6 +35,7 @@ export function RiskCreateDialog({ open, onOpenChange, onCreated }: Props) {
     setDescription("")
     setKeywords([])
     setLinkedTickers([])
+    setProviders(["news"])
     setAlertOnLevel("")
     setAlertOnChange("")
     setError(null)
@@ -50,9 +59,17 @@ export function RiskCreateDialog({ open, onOpenChange, onCreated }: Props) {
       const data = await res.json()
       setKeywords(data.keywords ?? [])
       setLinkedTickers(data.suggestedTickers ?? [])
+      if (Array.isArray(data.suggestedProviders) && data.suggestedProviders.length > 0) {
+        setProviders(data.suggestedProviders)
+      }
     } finally {
       setSuggesting(false)
     }
+  }
+
+  const toggleProvider = (key: string) => {
+    if (key === "news") return // always on
+    setProviders((prev) => prev.includes(key) ? prev.filter((p) => p !== key) : [...prev, key])
   }
 
   const save = async () => {
@@ -71,6 +88,7 @@ export function RiskCreateDialog({ open, onOpenChange, onCreated }: Props) {
           description: description.trim() || null,
           keywords,
           linked_tickers: linkedTickers,
+          providers,
           alert_on_level: alertOnLevel ? parseInt(alertOnLevel) : null,
           alert_on_change: alertOnChange ? parseInt(alertOnChange) : null,
         }),
@@ -191,6 +209,38 @@ export function RiskCreateDialog({ open, onOpenChange, onCreated }: Props) {
               )}
             </div>
             <KeywordInput placeholder="Add a ticker (e.g. TSM) + enter..." onAdd={addTicker} />
+          </div>
+
+          <div>
+            <label className="text-xs uppercase tracking-wider text-muted-foreground block mb-2">
+              Data providers
+            </label>
+            <div className="space-y-2">
+              {PROVIDERS.map((p) => {
+                const checked = providers.includes(p.key)
+                const locked = p.key === "news"
+                return (
+                  <label
+                    key={p.key}
+                    className={`flex items-start gap-3 p-2 rounded border cursor-pointer transition-colors ${
+                      checked ? "bg-primary/5 border-primary/30" : "border-border hover:bg-muted/30"
+                    } ${locked ? "opacity-80 cursor-default" : ""}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={locked}
+                      onChange={() => toggleProvider(p.key)}
+                      className="mt-0.5"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium">{p.label} {locked && <span className="text-[10px] text-muted-foreground font-normal ml-1">(always on)</span>}</div>
+                      <div className="text-xs text-muted-foreground">{p.description}</div>
+                    </div>
+                  </label>
+                )
+              })}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

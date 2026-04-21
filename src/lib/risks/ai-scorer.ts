@@ -151,14 +151,14 @@ Only include headlines with severity >= 2 OR direction != "unrelated" in the hea
 }
 
 /**
- * AI-extract search keywords from a risk title + description.
- * Returns 3-6 short search queries suitable for Google News.
+ * AI-extract search keywords, tickers, and relevant data providers from a
+ * risk title + description.
  */
 export async function suggestKeywordsForRisk(
   title: string,
   description: string,
-): Promise<{ keywords: string[]; suggestedTickers: string[] }> {
-  const prompt = `You are helping a user set up a risk-monitoring system. Given the risk they care about, produce search queries that would surface relevant news headlines.
+): Promise<{ keywords: string[]; suggestedTickers: string[]; suggestedProviders: string[] }> {
+  const prompt = `You are helping a user set up a risk-monitoring system. Given the risk, produce search queries, relevant tickers, and which data providers should be enabled.
 
 RISK
 Title: ${title}
@@ -166,14 +166,22 @@ Description: ${description || "(no description)"}
 
 Output STRICT JSON:
 {
-  "keywords": [string, ...],            // 3-6 Google News search phrases. Each should be specific enough to return relevant headlines without too much noise. Use quotes for multi-word phrases.
-  "suggested_tickers": [string, ...]    // 0-5 stock tickers whose price moves would correlate with this risk (optional, can be empty)
+  "keywords": [string, ...],            // 3-6 Google News search phrases. Use quoted multi-word phrases.
+  "suggested_tickers": [string, ...],   // 0-5 tickers whose price/volatility correlate with this risk (Yahoo Finance symbols incl. indices like ^VIX, ^TWII, forex like TWD=X)
+  "suggested_providers": [string, ...]  // subset of: ["news", "market", "polymarket", "taiwan_incursions"]
 }
 
+Provider selection rules:
+- "news" is always included (news sentiment is the baseline).
+- "market" if the risk has correlated tickers worth tracking volatility/drawdowns on.
+- "polymarket" if the risk is the kind of event people would bet on (geopolitical events, elections, macro outcomes, specific predictable outcomes).
+- "taiwan_incursions" ONLY if the risk is specifically about Taiwan / China-Taiwan military tensions (it pulls PLA ADIZ incursion data).
+
 Examples:
-- For "Taiwan invasion": keywords might be ["Taiwan invasion", "China Taiwan military", "PLA Taiwan", "Taiwan Strait"], tickers ["TSM","^TWII"]
-- For "Banking crisis": keywords ["regional bank failure", "bank run", "FDIC takeover", "deposit flight"], tickers ["KRE","XLF"]
-- For "Fed pivot hawkish": keywords ["Fed rate hike", "hawkish Fed", "inflation surprise"], tickers ["TLT","^VIX"]
+- "Taiwan invasion": keywords ["Taiwan invasion","China Taiwan military","PLA Taiwan","Taiwan Strait median line","Xi Jinping Taiwan"], tickers ["TSM","^TWII","TWD=X","ITA"], providers ["news","market","polymarket","taiwan_incursions"]
+- "Banking crisis": keywords ["regional bank failure","bank run","FDIC takeover","deposit flight"], tickers ["KRE","XLF"], providers ["news","market"]
+- "Fed hawkish pivot": keywords ["Fed rate hike","hawkish Fed","inflation surprise"], tickers ["TLT","^VIX","DXY"], providers ["news","market","polymarket"]
+- "US election chaos": keywords ["election contested","Trump Harris"], tickers ["^VIX"], providers ["news","polymarket"]
 
 No markdown, no prose. JSON only.`
 
@@ -185,12 +193,17 @@ No markdown, no prose. JSON only.`
     })
     const cleaned = text.replace(/```json\s*|```\s*/g, "").trim()
     const match = cleaned.match(/\{[\s\S]*\}/)
-    if (!match) return { keywords: [title], suggestedTickers: [] }
+    if (!match) return { keywords: [title], suggestedTickers: [], suggestedProviders: ["news"] }
     const parsed = JSON.parse(match[0])
     const keywords = Array.isArray(parsed.keywords) ? parsed.keywords.filter((k: unknown) => typeof k === "string").slice(0, 6) : [title]
     const tickers = Array.isArray(parsed.suggested_tickers) ? parsed.suggested_tickers.filter((k: unknown) => typeof k === "string").slice(0, 5) : []
-    return { keywords, suggestedTickers: tickers }
+    const VALID_PROVIDERS = ["news", "market", "polymarket", "taiwan_incursions"]
+    const providersRaw = Array.isArray(parsed.suggested_providers)
+      ? parsed.suggested_providers.filter((k: unknown) => typeof k === "string" && VALID_PROVIDERS.includes(k as string))
+      : ["news"]
+    const providers = providersRaw.includes("news") ? providersRaw : ["news", ...providersRaw]
+    return { keywords, suggestedTickers: tickers, suggestedProviders: providers }
   } catch {
-    return { keywords: [title], suggestedTickers: [] }
+    return { keywords: [title], suggestedTickers: [], suggestedProviders: ["news"] }
   }
 }

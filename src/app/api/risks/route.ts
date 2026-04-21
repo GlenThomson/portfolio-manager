@@ -21,11 +21,16 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const body = await request.json()
-  const { title, description, keywords, linked_tickers, alert_on_level, alert_on_change } = body
+  const { title, description, keywords, linked_tickers, providers, alert_on_level, alert_on_change } = body
 
   if (!title || typeof title !== "string" || title.length < 2) {
     return NextResponse.json({ error: "title is required" }, { status: 400 })
   }
+
+  const VALID_PROVIDERS = ["news", "market", "polymarket", "taiwan_incursions"]
+  const cleanProviders = Array.isArray(providers)
+    ? providers.filter((p: unknown) => typeof p === "string" && VALID_PROVIDERS.includes(p as string))
+    : ["news"]
 
   const { data, error } = await supabase
     .from("risk_monitors")
@@ -35,6 +40,7 @@ export async function POST(request: NextRequest) {
       description: description ?? null,
       keywords: Array.isArray(keywords) ? keywords : [],
       linked_tickers: Array.isArray(linked_tickers) ? linked_tickers : [],
+      providers: cleanProviders.length > 0 ? cleanProviders : ["news"],
       alert_on_level: alert_on_level != null ? Number(alert_on_level) : null,
       alert_on_change: alert_on_change != null ? Number(alert_on_change) : null,
     })
@@ -58,10 +64,17 @@ export async function PATCH(request: NextRequest) {
     .from("risk_monitors").select("id").eq("id", id).eq("user_id", user.id).single()
   if (!existing) return NextResponse.json({ error: "Monitor not found" }, { status: 404 })
 
-  const allowed = ["title", "description", "keywords", "linked_tickers", "alert_on_level", "alert_on_change", "is_active"]
+  const allowed = ["title", "description", "keywords", "linked_tickers", "providers", "alert_on_level", "alert_on_change", "is_active"]
   const update: Record<string, unknown> = { updated_at: new Date().toISOString() }
   for (const k of allowed) {
     if (k in fields) update[k] = fields[k]
+  }
+  // Validate providers if provided
+  if ("providers" in update) {
+    const VALID_PROVIDERS = ["news", "market", "polymarket", "taiwan_incursions"]
+    const arr = Array.isArray(update.providers) ? update.providers : []
+    const clean = arr.filter((p: unknown) => typeof p === "string" && VALID_PROVIDERS.includes(p as string))
+    update.providers = clean.length > 0 ? clean : ["news"]
   }
 
   const { data, error } = await supabase

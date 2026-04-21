@@ -1,6 +1,9 @@
 import { createClient as createServiceClient } from "@supabase/supabase-js"
-import { searchMultipleQueries } from "./news-search"
-import { scoreHeadlinesForRisk } from "./ai-scorer"
+import type { ProviderKey, ProviderResult, MonitorContext } from "./providers/types"
+import { runNewsProvider } from "./providers/news"
+import { runMarketProvider } from "./providers/market"
+import { runPolymarketProvider } from "./providers/polymarket"
+import { runTaiwanIncursionsProvider } from "./providers/taiwan-incursions"
 
 function serviceClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -16,6 +19,7 @@ interface RiskMonitorRow {
   description: string | null
   keywords: string[]
   linked_tickers: string[]
+  providers: ProviderKey[]
   alert_on_level: number | null
   alert_on_change: number | null
   latest_score: number | null
@@ -23,18 +27,23 @@ interface RiskMonitorRow {
   is_active: boolean
 }
 
+const PROVIDER_RUNNERS: Record<ProviderKey, (ctx: MonitorContext) => Promise<ProviderResult>> = {
+  news: runNewsProvider,
+  market: runMarketProvider,
+  polymarket: runPolymarketProvider,
+  taiwan_incursions: runTaiwanIncursionsProvider,
+}
+
 /**
- * Compute a fresh risk score for one monitor.
- * Fetches news for all keywords, AI-scores them, persists risk_scores row,
- * updates monitor.latest_score.
- *
- * If the score changes materially (vs. previous) or crosses the user's
- * alert threshold, creates an inbox item.
+ * Compute a fresh risk score using the monitor's enabled providers.
+ * Each provider produces an independent 0-100 signal; composite is
+ * the weight-normalised average across providers that returned a
+ * non-zero weight (errors → weight 0 → excluded).
  */
 export async function computeRiskScore(monitorId: string, opts: { force?: boolean } = {}): Promise<{
   score: number
   summary: string
-  headlineCount: number
+  providers: ProviderResult[]
 }> {
   const supabase = serviceClient()
 
@@ -47,62 +56,121 @@ export async function computeRiskScore(monitorId: string, opts: { force?: boolea
 
   const m = monitor as RiskMonitorRow
   if (!m.is_active && !opts.force) {
-    return { score: m.latest_score ?? 0, summary: "Monitor is paused", headlineCount: 0 }
+    return {
+      score: m.latest_score != null ? Number(m.latest_score) : 0,
+      summary: "Monitor is paused",
+      providers: [],
+    }
   }
 
-  // Fetch news for all keywords (limit ~10 per query, dedupe by URL)
-  const keywords = m.keywords.length > 0 ? m.keywords : [m.title]
-  const headlines = await searchMultipleQueries(keywords, {
-    limitPerQuery: 10,
-    lookbackDays: 7,
-  })
+  const ctx: MonitorContext = {
+    id: m.id,
+    userId: m.user_id,
+    title: m.title,
+    description: m.description,
+    keywords: m.keywords ?? [],
+    linkedTickers: m.linked_tickers ?? [],
+  }
 
-  // AI score the batch
-  const result = await scoreHeadlinesForRisk(m.title, m.description ?? "", headlines)
+  const enabledProviders = (Array.isArray(m.providers) && m.providers.length > 0)
+    ? m.providers
+    : ["news" as ProviderKey]
 
-  // Persist risk_scores row
-  await supabase.from("risk_scores").insert({
+  // Run providers in parallel
+  const results = await Promise.all(
+    enabledProviders.map(async (key) => {
+      const runner = PROVIDER_RUNNERS[key]
+      if (!runner) {
+        return {
+          key,
+          score: 0,
+          weight: 0,
+          summary: `Unknown provider: ${key}`,
+          data: {},
+          error: "unknown_provider",
+        } as ProviderResult
+      }
+      try {
+        return await runner(ctx)
+      } catch (err) {
+        return {
+          key,
+          score: 0,
+          weight: 0,
+          summary: `${key} failed`,
+          data: {},
+          error: err instanceof Error ? err.message : String(err),
+        } as ProviderResult
+      }
+    }),
+  )
+
+  // Weighted composite (skip providers with weight 0 — errors or N/A data)
+  const contributing = results.filter((r) => r.weight > 0 && !r.error)
+  const totalWeight = contributing.reduce((s, r) => s + r.weight, 0)
+  const composite = totalWeight > 0
+    ? Math.round(contributing.reduce((s, r) => s + r.score * r.weight, 0) / totalWeight)
+    : 0
+
+  // Short overall summary = leader's summary, or blend
+  const leader = [...contributing].sort((a, b) => b.score * b.weight - a.score * a.weight)[0]
+  const summary = leader?.summary ?? "No data available yet."
+
+  // Persist
+  const scoresInsert = {
     monitor_id: m.id,
     user_id: m.user_id,
-    score: result.score,
-    components: { news: { score: result.score, headlineCount: headlines.length } },
-    headlines: result.headlines,
-    summary: result.summary,
-  })
+    score: composite,
+    components: {
+      providers: results.map((r) => ({
+        key: r.key,
+        score: r.score,
+        weight: r.weight,
+        summary: r.summary,
+        data: r.data,
+        error: r.error,
+      })),
+      totalWeight,
+      contributing: contributing.map((r) => r.key),
+    },
+    // Pull the news headlines out top-level for backward compatibility with the existing detail view
+    headlines: results.find((r) => r.key === "news")?.data?.headlines ?? [],
+    summary,
+  }
 
-  // Update monitor's latest_score
+  await supabase.from("risk_scores").insert(scoresInsert)
+
+  // Alert check
+  const prevScore = m.latest_score != null ? Number(m.latest_score) : null
+  const delta = prevScore != null ? composite - prevScore : null
+  const alertLevel = m.alert_on_level != null ? Number(m.alert_on_level) : null
+  const alertChange = m.alert_on_change != null ? Number(m.alert_on_change) : null
+
+  const crossedLevel = alertLevel != null && prevScore != null && prevScore < alertLevel && composite >= alertLevel
+  const jumpedChange = alertChange != null && delta != null && Math.abs(delta) >= alertChange
+
   await supabase
     .from("risk_monitors")
     .update({
-      latest_score: result.score,
+      latest_score: composite,
       latest_score_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
     .eq("id", m.id)
 
-  // Check alert conditions
-  const prevScore = m.latest_score != null ? Number(m.latest_score) : null
-  const delta = prevScore != null ? result.score - prevScore : null
-  const alertLevel = m.alert_on_level != null ? Number(m.alert_on_level) : null
-  const alertChange = m.alert_on_change != null ? Number(m.alert_on_change) : null
-
-  const crossedLevel = alertLevel != null && prevScore != null && prevScore < alertLevel && result.score >= alertLevel
-  const jumpedChange = alertChange != null && delta != null && Math.abs(delta) >= alertChange
-
   if (crossedLevel || jumpedChange) {
-    const severity = result.score >= 80 ? "urgent" : result.score >= 60 ? "warning" : "info"
+    const severity = composite >= 80 ? "urgent" : composite >= 60 ? "warning" : "info"
     const title = crossedLevel
-      ? `${m.title} crossed alert level (${result.score}/100)`
-      : `${m.title} moved ${delta! > 0 ? "+" : ""}${delta} to ${result.score}/100`
+      ? `${m.title} crossed alert level (${composite}/100)`
+      : `${m.title} moved ${delta! > 0 ? "+" : ""}${delta} to ${composite}/100`
 
-    // Only create nudge if no unread one exists for this monitor today
     const today = new Date().toISOString().slice(0, 10)
     const { data: existing } = await supabase
       .from("inbox_items")
       .select("id")
       .eq("user_id", m.user_id)
       .eq("type", "risk_alert")
-      .eq("symbol", m.id) // using symbol field to hold monitor_id for idempotency
+      .eq("symbol", m.id)
       .gte("created_at", `${today}T00:00:00Z`)
       .limit(1)
 
@@ -112,27 +180,17 @@ export async function computeRiskScore(monitorId: string, opts: { force?: boolea
         type: "risk_alert",
         severity,
         title,
-        body: result.summary,
+        body: summary,
         symbol: m.id,
         action_url: `/risks/${m.id}`,
       })
     }
   }
 
-  return {
-    score: result.score,
-    summary: result.summary,
-    headlineCount: headlines.length,
-  }
+  return { score: composite, summary, providers: results }
 }
 
-/**
- * Compute scores for all active monitors belonging to a user.
- */
-export async function computeAllRisksForUser(userId: string): Promise<{
-  computed: number
-  failed: number
-}> {
+export async function computeAllRisksForUser(userId: string): Promise<{ computed: number; failed: number }> {
   const supabase = serviceClient()
   const { data: monitors } = await supabase
     .from("risk_monitors")

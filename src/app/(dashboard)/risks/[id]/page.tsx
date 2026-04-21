@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Loader2, ArrowLeft, RefreshCw, Shield, Trash2, ExternalLink } from "lucide-react"
+import { Loader2, ArrowLeft, RefreshCw, Shield, Trash2, ExternalLink, Newspaper, TrendingUp, Target, Plane } from "lucide-react"
 import Link from "next/link"
 
 interface Monitor {
@@ -13,6 +13,7 @@ interface Monitor {
   description: string | null
   keywords: string[]
   linked_tickers: string[]
+  providers: string[]
   latest_score: number | null
   latest_score_at: string | null
   alert_on_level: number | null
@@ -20,19 +21,21 @@ interface Monitor {
   is_active: boolean
 }
 
+interface ProviderBreakdown {
+  key: "news" | "market" | "polymarket" | "taiwan_incursions"
+  score: number
+  weight: number
+  summary: string
+  data: Record<string, unknown>
+  error?: string
+}
+
 interface Score {
   id: string
   score: number
   summary: string | null
-  headlines: Array<{
-    title: string
-    url: string
-    source: string
-    publishedAt: string
-    severity: number
-    direction: "escalating" | "stable" | "deescalating" | "unrelated"
-    reasoning: string
-  }> | null
+  components: { providers?: ProviderBreakdown[]; totalWeight?: number } | null
+  headlines: unknown
   computed_at: string
 }
 
@@ -43,8 +46,11 @@ function scoreColor(score: number) {
   return "#26a69a"
 }
 
-function directionColor(d: Score["headlines"] extends Array<infer T> ? T extends { direction: infer D } ? D : never : never) {
-  return d === "escalating" ? "#ef5350" : d === "deescalating" ? "#26a69a" : d === "stable" ? "#ffab00" : "#787b86"
+const PROVIDER_LABELS: Record<ProviderBreakdown["key"], { label: string; icon: typeof Newspaper }> = {
+  news: { label: "News sentiment", icon: Newspaper },
+  market: { label: "Market signals", icon: TrendingUp },
+  polymarket: { label: "Prediction markets", icon: Target },
+  taiwan_incursions: { label: "PLA ADIZ incursions", icon: Plane },
 }
 
 export default function RiskDetailPage() {
@@ -61,10 +67,7 @@ export default function RiskDetailPage() {
     setLoading(true)
     try {
       const res = await fetch(`/api/risks/${id}`)
-      if (!res.ok) {
-        setMonitor(null)
-        return
-      }
+      if (!res.ok) { setMonitor(null); return }
       const data = await res.json()
       setMonitor(data.monitor)
       setScores(data.scores ?? [])
@@ -96,13 +99,8 @@ export default function RiskDetailPage() {
   }
 
   if (loading) {
-    return (
-      <div className="flex justify-center py-12">
-        <Loader2 className="h-6 w-6 animate-spin" style={{ color: "#787b86" }} />
-      </div>
-    )
+    return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin" style={{ color: "#787b86" }} /></div>
   }
-
   if (!monitor) {
     return (
       <div className="py-12 text-center">
@@ -114,10 +112,9 @@ export default function RiskDetailPage() {
 
   const latestScore = monitor.latest_score != null ? Math.round(Number(monitor.latest_score)) : null
   const color = latestScore != null ? scoreColor(latestScore) : "#787b86"
-
-  // Chart data
-  const chartScores = [...scores].reverse() // oldest first
+  const chartScores = [...scores].reverse()
   const hasHistory = chartScores.length > 1
+  const latestProviders = scores[0]?.components?.providers ?? []
 
   return (
     <div className="space-y-4">
@@ -128,15 +125,15 @@ export default function RiskDetailPage() {
         <div className="ml-auto flex gap-2">
           <Button size="sm" variant="outline" onClick={refresh} disabled={refreshing}>
             {refreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <RefreshCw className="h-3.5 w-3.5 mr-1" />}
-            Refresh score
+            Refresh
           </Button>
           <Button size="sm" variant="outline" onClick={remove}>
-            <Trash2 className="h-3.5 w-3.5 mr-1" />
-            Delete
+            <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
           </Button>
         </div>
       </div>
 
+      {/* Header card */}
       <Card>
         <CardContent className="p-6">
           <div className="flex items-start gap-4 flex-wrap">
@@ -145,28 +142,27 @@ export default function RiskDetailPage() {
                 <Shield className="h-5 w-5" style={{ color }} />
                 <h1 className="text-2xl font-bold">{monitor.title}</h1>
               </div>
-              {monitor.description && (
-                <p className="text-sm text-muted-foreground">{monitor.description}</p>
-              )}
+              {monitor.description && <p className="text-sm text-muted-foreground">{monitor.description}</p>}
               <div className="flex flex-wrap gap-1 mt-3">
+                {monitor.providers?.map((p) => {
+                  const label = PROVIDER_LABELS[p as ProviderBreakdown["key"]]?.label ?? p
+                  return (
+                    <span key={p} className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-500 border border-blue-500/30">
+                      {label}
+                    </span>
+                  )
+                })}
                 {monitor.keywords.map((k) => (
-                  <span key={k} className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                    {k}
-                  </span>
+                  <span key={k} className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{k}</span>
                 ))}
               </div>
             </div>
-
             <div className="text-right">
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Current score</div>
-              <div className="text-5xl font-bold leading-none" style={{ color }}>
-                {latestScore ?? "—"}
-              </div>
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Composite score</div>
+              <div className="text-5xl font-bold leading-none" style={{ color }}>{latestScore ?? "—"}</div>
               <div className="text-xs mt-1" style={{ color }}>/ 100</div>
             </div>
           </div>
-
-          {/* Latest summary */}
           {scores[0]?.summary && (
             <div className="mt-4 rounded border-l-2 pl-3 py-1" style={{ borderColor: color }}>
               <p className="text-sm">{scores[0].summary}</p>
@@ -175,58 +171,21 @@ export default function RiskDetailPage() {
         </CardContent>
       </Card>
 
-      {/* Score history chart */}
+      {/* Provider breakdown grid */}
+      {latestProviders.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {latestProviders.map((p) => (
+            <ProviderCard key={p.key} provider={p} />
+          ))}
+        </div>
+      )}
+
+      {/* Score history */}
       {hasHistory && (
         <Card>
           <CardContent className="p-4">
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">Score history</div>
             <ScoreChart scores={chartScores} />
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Latest headlines */}
-      {scores[0]?.headlines && scores[0].headlines.length > 0 && (
-        <Card>
-          <CardContent className="p-4">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-3">
-              Recent headlines (top scored)
-            </div>
-            <div className="space-y-3">
-              {scores[0].headlines.map((h, i) => (
-                <div key={i} className="flex gap-3 items-start">
-                  <div className="shrink-0">
-                    <div
-                      className="text-xs font-bold w-8 text-center py-1 rounded"
-                      style={{ background: directionColor(h.direction) + "20", color: directionColor(h.direction) }}
-                    >
-                      {h.severity}
-                    </div>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <a
-                      href={h.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm font-medium hover:underline flex items-start gap-1"
-                    >
-                      {h.title}
-                      <ExternalLink className="h-3 w-3 mt-0.5 opacity-60 shrink-0" />
-                    </a>
-                    <div className="flex gap-2 text-[10px] text-muted-foreground mt-0.5">
-                      <span>{h.source}</span>
-                      <span>·</span>
-                      <span>{new Date(h.publishedAt).toLocaleDateString()}</span>
-                      <span>·</span>
-                      <span style={{ color: directionColor(h.direction) }}>{h.direction}</span>
-                    </div>
-                    {h.reasoning && (
-                      <p className="text-xs text-muted-foreground mt-1 italic">{h.reasoning}</p>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
           </CardContent>
         </Card>
       )}
@@ -246,25 +205,199 @@ export default function RiskDetailPage() {
   )
 }
 
+// ── Provider cards ────────────────────────────────────────
+
+function ProviderCard({ provider }: { provider: ProviderBreakdown }) {
+  const meta = PROVIDER_LABELS[provider.key] ?? { label: provider.key, icon: Shield }
+  const Icon = meta.icon
+  const color = scoreColor(provider.score)
+  const disabled = provider.error || provider.weight === 0
+
+  return (
+    <Card className="relative overflow-hidden">
+      <div className="absolute top-0 left-0 w-1 h-full" style={{ background: disabled ? "#787b86" : color }} />
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between gap-2 mb-3">
+          <div className="flex items-center gap-2">
+            <Icon className="h-4 w-4" style={{ color: disabled ? "#787b86" : color }} />
+            <div className="text-sm font-semibold">{meta.label}</div>
+          </div>
+          <div className="text-right">
+            <div className="text-2xl font-bold leading-none" style={{ color: disabled ? "#787b86" : color }}>
+              {disabled ? "—" : Math.round(provider.score)}
+            </div>
+            <div className="text-[10px] text-muted-foreground">weight {Math.round(provider.weight * 100)}%</div>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground mb-3">{provider.summary}</p>
+        <ProviderBody provider={provider} />
+      </CardContent>
+    </Card>
+  )
+}
+
+function ProviderBody({ provider }: { provider: ProviderBreakdown }) {
+  if (provider.error) {
+    return <div className="text-xs text-muted-foreground italic">Error: {provider.error}</div>
+  }
+  if (provider.key === "news") return <NewsBody data={provider.data} />
+  if (provider.key === "market") return <MarketBody data={provider.data} />
+  if (provider.key === "polymarket") return <PolymarketBody data={provider.data} />
+  if (provider.key === "taiwan_incursions") return <TaiwanBody data={provider.data} />
+  return null
+}
+
+function NewsBody({ data }: { data: Record<string, unknown> }) {
+  const headlines = (data.headlines as Array<{ title: string; url: string; source: string; publishedAt: string; severity: number; direction: string; reasoning: string }>) ?? []
+  const top = headlines.slice(0, 5)
+  if (top.length === 0) return <div className="text-xs text-muted-foreground italic">No relevant headlines in recent window.</div>
+  return (
+    <div className="space-y-2">
+      {top.map((h, i) => {
+        const dirColor = h.direction === "escalating" ? "#ef5350" : h.direction === "deescalating" ? "#26a69a" : h.direction === "stable" ? "#ffab00" : "#787b86"
+        return (
+          <div key={i} className="flex gap-2 items-start">
+            <div className="shrink-0 text-[10px] font-bold w-6 text-center py-0.5 rounded" style={{ background: dirColor + "20", color: dirColor }}>
+              {h.severity}
+            </div>
+            <div className="flex-1 min-w-0">
+              <a href={h.url} target="_blank" rel="noopener noreferrer" className="text-xs hover:underline flex items-start gap-1">
+                <span className="flex-1">{h.title}</span>
+                <ExternalLink className="h-3 w-3 opacity-60 shrink-0 mt-0.5" />
+              </a>
+              <div className="text-[10px] text-muted-foreground">{h.source} · {new Date(h.publishedAt).toLocaleDateString()}</div>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function MarketBody({ data }: { data: Record<string, unknown> }) {
+  const signals = (data.signals as Array<{ symbol: string; currentPrice: number; pct5d: number; hv20: number; hvBaseline: number; hvZscore: number; signalScore: number; note: string }>) ?? []
+  if (signals.length === 0) return <div className="text-xs text-muted-foreground italic">No linked tickers.</div>
+  return (
+    <table className="w-full text-xs">
+      <thead>
+        <tr className="text-muted-foreground">
+          <th className="text-left font-normal py-1">Ticker</th>
+          <th className="text-right font-normal">Price</th>
+          <th className="text-right font-normal">5d</th>
+          <th className="text-right font-normal">HV</th>
+          <th className="text-right font-normal">vs base</th>
+        </tr>
+      </thead>
+      <tbody>
+        {signals.map((s) => (
+          <tr key={s.symbol}>
+            <td className="py-1 font-medium">
+              <Link href={`/stock/${s.symbol}`} className="hover:underline">{s.symbol}</Link>
+            </td>
+            <td className="text-right">${s.currentPrice.toFixed(2)}</td>
+            <td className="text-right" style={{ color: s.pct5d >= 0 ? "#26a69a" : "#ef5350" }}>
+              {s.pct5d >= 0 ? "+" : ""}{s.pct5d.toFixed(1)}%
+            </td>
+            <td className="text-right">{s.hv20.toFixed(0)}%</td>
+            <td className="text-right" style={{ color: s.hvZscore > 1 ? "#ef5350" : s.hvZscore > 0 ? "#ffab00" : "#787b86" }}>
+              {s.hvZscore >= 0 ? "+" : ""}{s.hvZscore.toFixed(2)}σ
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+function PolymarketBody({ data }: { data: Record<string, unknown> }) {
+  const contracts = (data.contracts as Array<{ question: string; yesPrice: number; volume: number; url: string; endDate?: string | null }>) ?? []
+  if (contracts.length === 0) return <div className="text-xs text-muted-foreground italic">No relevant Polymarket contracts.</div>
+  return (
+    <div className="space-y-2">
+      {contracts.slice(0, 5).map((c, i) => {
+        const pct = Math.round(c.yesPrice * 100)
+        const color = pct >= 50 ? "#ef5350" : pct >= 20 ? "#ffab00" : "#26a69a"
+        return (
+          <a key={i} href={c.url} target="_blank" rel="noopener noreferrer" className="flex items-start gap-2 hover:bg-muted/30 rounded p-1 -mx-1">
+            <div className="shrink-0 text-xs font-bold w-10 text-right" style={{ color }}>{pct}%</div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs line-clamp-2">{c.question}</div>
+              <div className="text-[10px] text-muted-foreground">
+                Vol ${(c.volume / 1000).toFixed(0)}k
+                {c.endDate && ` · ends ${new Date(c.endDate).toLocaleDateString()}`}
+              </div>
+            </div>
+            <ExternalLink className="h-3 w-3 opacity-60 shrink-0 mt-1" />
+          </a>
+        )
+      })}
+    </div>
+  )
+}
+
+function TaiwanBody({ data }: { data: Record<string, unknown> }) {
+  const reports = (data.reports as Array<{ date: string; aircraft: number; vessels: number; crossedMedianLine: boolean; sourceUrl: string; sourceTitle: string }>) ?? []
+  const recentAvg = data.recentAvg as number | null
+  const baseline = data.baseline as number | null
+  const crossedDays = data.crossedMedianDays as number | undefined
+
+  if (reports.length === 0) return <div className="text-xs text-muted-foreground italic">No structured incursion data retrieved.</div>
+
+  const max = Math.max(30, ...reports.slice(0, 10).map((r) => r.aircraft))
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-3 gap-3 text-center text-xs">
+        <div>
+          <div className="text-[10px] uppercase text-muted-foreground">Last 7d avg</div>
+          <div className="text-lg font-bold">{recentAvg?.toFixed(1) ?? "—"}</div>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase text-muted-foreground">Baseline (14d)</div>
+          <div className="text-lg font-bold">{baseline?.toFixed(1) ?? "—"}</div>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase text-muted-foreground">Median crossings</div>
+          <div className="text-lg font-bold">{crossedDays ?? 0}</div>
+        </div>
+      </div>
+      <div>
+        <div className="text-[10px] uppercase text-muted-foreground mb-1">Daily incursions</div>
+        <div className="space-y-1">
+          {reports.slice(0, 10).map((r, i) => (
+            <div key={i} className="flex items-center gap-2 text-[11px]">
+              <div className="w-16 text-muted-foreground shrink-0">{r.date}</div>
+              <div className="flex-1 bg-muted rounded h-4 relative overflow-hidden">
+                <div
+                  className="absolute left-0 top-0 bottom-0 rounded"
+                  style={{ width: `${Math.min(100, (r.aircraft / max) * 100)}%`, background: r.crossedMedianLine ? "#ef5350" : "#2962ff" }}
+                />
+                <div className="absolute inset-0 flex items-center px-1.5 text-[10px] font-medium">
+                  {r.aircraft}✈ {r.vessels > 0 && `${r.vessels}🚢`}
+                </div>
+              </div>
+              {r.crossedMedianLine && <span className="text-[10px] text-destructive shrink-0">↔ median</span>}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Score history chart (unchanged) ───────────────────────
+
 function ScoreChart({ scores }: { scores: Score[] }) {
   const W = 800
   const H = 120
-  const values = scores.map((s) => Number(s.score))
-  const max = 100
-  const min = 0
-
   const path = scores
     .map((s, i) => {
       const x = (i / Math.max(1, scores.length - 1)) * W
-      const y = H - ((Number(s.score) - min) / (max - min)) * H
+      const y = H - (Number(s.score) / 100) * H
       return `${i === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`
     })
     .join(" ")
-
-  // Grid lines at 20, 40, 60, 80
   const gridY = [20, 40, 60, 80]
-
-  // Hover state
   const [hover, setHover] = useState<number | null>(null)
 
   return (
@@ -282,38 +415,19 @@ function ScoreChart({ scores }: { scores: Score[] }) {
           setHover(Math.max(0, Math.min(scores.length - 1, idx)))
         }}
       >
-        {/* Grid lines */}
         {gridY.map((y) => (
-          <line
-            key={y}
-            x1={0} x2={W}
-            y1={H - (y / 100) * H} y2={H - (y / 100) * H}
-            stroke="#2a2e39" strokeWidth="0.5" strokeDasharray="2 3"
-            vectorEffect="non-scaling-stroke"
-          />
+          <line key={y} x1={0} x2={W} y1={H - (y / 100) * H} y2={H - (y / 100) * H} stroke="#2a2e39" strokeWidth="0.5" strokeDasharray="2 3" vectorEffect="non-scaling-stroke" />
         ))}
-        {/* Line */}
         <path d={path} fill="none" stroke="#2962ff" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-        {/* Hover marker */}
         {hover != null && scores[hover] && (
-          <circle
-            cx={(hover / Math.max(1, scores.length - 1)) * W}
-            cy={H - (Number(scores[hover].score) / 100) * H}
-            r="4"
-            fill="#2962ff"
-            vectorEffect="non-scaling-stroke"
-          />
+          <circle cx={(hover / Math.max(1, scores.length - 1)) * W} cy={H - (Number(scores[hover].score) / 100) * H} r="4" fill="#2962ff" vectorEffect="non-scaling-stroke" />
         )}
       </svg>
-      {/* Y-axis labels (HTML overlay) */}
       <div className="absolute left-0 top-0 bottom-6 w-8 text-[9px] text-right pr-1" style={{ color: "#787b86" }}>
         {[100, 75, 50, 25, 0].map((v, i) => (
-          <div key={v} style={{ position: "absolute", top: `${(i / 4) * 100}%`, transform: "translateY(-50%)", right: 4 }}>
-            {v}
-          </div>
+          <div key={v} style={{ position: "absolute", top: `${(i / 4) * 100}%`, transform: "translateY(-50%)", right: 4 }}>{v}</div>
         ))}
       </div>
-      {/* X-axis labels */}
       <div className="absolute bottom-0 left-0 right-0 flex justify-between text-[9px] px-1" style={{ color: "#787b86" }}>
         <span>{new Date(scores[0].computed_at).toLocaleDateString()}</span>
         {hover != null && scores[hover] && (
