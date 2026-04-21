@@ -23,6 +23,7 @@ export function RiskCreateDialog({ open, onOpenChange, onCreated }: Props) {
   const [description, setDescription] = useState("")
   const [keywords, setKeywords] = useState<string[]>([])
   const [linkedTickers, setLinkedTickers] = useState<string[]>([])
+  const [hedgeTickers, setHedgeTickers] = useState<string[]>([])
   const [providers, setProviders] = useState<string[]>(["news"])
   const [alertOnLevel, setAlertOnLevel] = useState<string>("")
   const [alertOnChange, setAlertOnChange] = useState<string>("")
@@ -35,6 +36,7 @@ export function RiskCreateDialog({ open, onOpenChange, onCreated }: Props) {
     setDescription("")
     setKeywords([])
     setLinkedTickers([])
+    setHedgeTickers([])
     setProviders(["news"])
     setAlertOnLevel("")
     setAlertOnChange("")
@@ -59,6 +61,7 @@ export function RiskCreateDialog({ open, onOpenChange, onCreated }: Props) {
       const data = await res.json()
       setKeywords(data.keywords ?? [])
       setLinkedTickers(data.suggestedTickers ?? [])
+      setHedgeTickers(data.suggestedHedgeTickers ?? [])
       if (Array.isArray(data.suggestedProviders) && data.suggestedProviders.length > 0) {
         setProviders(data.suggestedProviders)
       }
@@ -88,6 +91,7 @@ export function RiskCreateDialog({ open, onOpenChange, onCreated }: Props) {
           description: description.trim() || null,
           keywords,
           linked_tickers: linkedTickers,
+          hedge_tickers: hedgeTickers,
           providers,
           alert_on_level: alertOnLevel ? parseInt(alertOnLevel) : null,
           alert_on_change: alertOnChange ? parseInt(alertOnChange) : null,
@@ -115,6 +119,7 @@ export function RiskCreateDialog({ open, onOpenChange, onCreated }: Props) {
 
   const removeKeyword = (k: string) => setKeywords((prev) => prev.filter((x) => x !== k))
   const removeTicker = (t: string) => setLinkedTickers((prev) => prev.filter((x) => x !== t))
+  const removeHedge = (t: string) => setHedgeTickers((prev) => prev.filter((x) => x !== t))
 
   const addKeyword = (input: string) => {
     const v = input.trim()
@@ -123,6 +128,10 @@ export function RiskCreateDialog({ open, onOpenChange, onCreated }: Props) {
   const addTicker = (input: string) => {
     const v = input.trim().toUpperCase()
     if (v && !linkedTickers.includes(v)) setLinkedTickers([...linkedTickers, v])
+  }
+  const addHedge = (input: string) => {
+    const v = input.trim().toUpperCase()
+    if (v && !hedgeTickers.includes(v)) setHedgeTickers([...hedgeTickers, v])
   }
 
   return (
@@ -193,7 +202,7 @@ export function RiskCreateDialog({ open, onOpenChange, onCreated }: Props) {
 
           <div>
             <label className="text-xs uppercase tracking-wider text-muted-foreground block mb-1">
-              Linked tickers (optional — for future market-based scoring)
+              Linked tickers (feed market-signal scoring)
             </label>
             <div className="flex flex-wrap gap-1.5 mb-2 min-h-[28px]">
               {linkedTickers.map((t) => (
@@ -209,6 +218,29 @@ export function RiskCreateDialog({ open, onOpenChange, onCreated }: Props) {
               )}
             </div>
             <KeywordInput placeholder="Add a ticker (e.g. TSM) + enter..." onAdd={addTicker} />
+          </div>
+
+          <div>
+            <label className="text-xs uppercase tracking-wider text-muted-foreground block mb-1">
+              Hedge candidates (entry-signal monitoring)
+            </label>
+            <p className="text-[11px] text-muted-foreground mb-2">
+              Tickers worth buying puts/protection on when this risk is elevated. System tracks RSI, drawdown, and 52w-high distance — alerts when entry conditions align with risk being elevated.
+            </p>
+            <div className="flex flex-wrap gap-1.5 mb-2 min-h-[28px]">
+              {hedgeTickers.map((t) => (
+                <span key={t} className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-emerald-500/15 text-emerald-500 border border-emerald-500/30">
+                  {t}
+                  <button onClick={() => removeHedge(t)} className="hover:text-destructive">
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+              {hedgeTickers.length === 0 && (
+                <span className="text-xs text-muted-foreground italic">Optional</span>
+              )}
+            </div>
+            <KeywordInput placeholder="Add a hedge ticker + enter..." onAdd={addHedge} />
           </div>
 
           <div>

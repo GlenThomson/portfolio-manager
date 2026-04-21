@@ -157,8 +157,8 @@ Only include headlines with severity >= 2 OR direction != "unrelated" in the hea
 export async function suggestKeywordsForRisk(
   title: string,
   description: string,
-): Promise<{ keywords: string[]; suggestedTickers: string[]; suggestedProviders: string[] }> {
-  const prompt = `You are helping a user set up a risk-monitoring system. Given the risk, produce search queries, relevant tickers, and which data providers should be enabled.
+): Promise<{ keywords: string[]; suggestedTickers: string[]; suggestedHedgeTickers: string[]; suggestedProviders: string[] }> {
+  const prompt = `You are helping a user set up a risk-monitoring system. Given the risk, produce search queries, relevant tickers, hedge candidates, and which data providers should be enabled.
 
 RISK
 Title: ${title}
@@ -166,22 +166,22 @@ Description: ${description || "(no description)"}
 
 Output STRICT JSON:
 {
-  "keywords": [string, ...],            // 3-6 Google News search phrases. Use quoted multi-word phrases.
-  "suggested_tickers": [string, ...],   // 0-5 tickers whose price/volatility correlate with this risk (Yahoo Finance symbols incl. indices like ^VIX, ^TWII, forex like TWD=X)
-  "suggested_providers": [string, ...]  // subset of: ["news", "market", "polymarket", "taiwan_incursions"]
+  "keywords": [string, ...],              // 3-6 Google News search phrases. Use quoted multi-word phrases.
+  "suggested_tickers": [string, ...],     // 0-5 tickers whose price/volatility correlate with this risk (Yahoo Finance symbols incl. indices like ^VIX, ^TWII, forex like TWD=X). These feed market-signal scoring.
+  "suggested_hedge_tickers": [string, ...], // 0-5 tickers the user could trade as a HEDGE if the risk materialises. For directional risks this is usually the same as suggested_tickers but emphasises the most liquid / cleanest hedge instruments. The system will score these for entry conditions (RSI, drawdown).
+  "suggested_providers": [string, ...]    // subset of: ["news", "market", "polymarket", "taiwan_incursions"]
 }
 
 Provider selection rules:
-- "news" is always included (news sentiment is the baseline).
+- "news" is always included (baseline).
 - "market" if the risk has correlated tickers worth tracking volatility/drawdowns on.
-- "polymarket" if the risk is the kind of event people would bet on (geopolitical events, elections, macro outcomes, specific predictable outcomes).
-- "taiwan_incursions" ONLY if the risk is specifically about Taiwan / China-Taiwan military tensions (it pulls PLA ADIZ incursion data).
+- "polymarket" if the risk is the kind of event people would bet on (geopolitical events, elections, macro outcomes).
+- "taiwan_incursions" ONLY if the risk is specifically about Taiwan / China-Taiwan military tensions.
 
 Examples:
-- "Taiwan invasion": keywords ["Taiwan invasion","China Taiwan military","PLA Taiwan","Taiwan Strait median line","Xi Jinping Taiwan"], tickers ["TSM","^TWII","TWD=X","ITA"], providers ["news","market","polymarket","taiwan_incursions"]
-- "Banking crisis": keywords ["regional bank failure","bank run","FDIC takeover","deposit flight"], tickers ["KRE","XLF"], providers ["news","market"]
-- "Fed hawkish pivot": keywords ["Fed rate hike","hawkish Fed","inflation surprise"], tickers ["TLT","^VIX","DXY"], providers ["news","market","polymarket"]
-- "US election chaos": keywords ["election contested","Trump Harris"], tickers ["^VIX"], providers ["news","polymarket"]
+- "Taiwan invasion": keywords ["Taiwan invasion","China Taiwan military","PLA Taiwan","Taiwan Strait median line","Xi Jinping Taiwan"], tickers ["TSM","^TWII","TWD=X","ITA"], hedge_tickers ["TSM","NVDA","AVGO","ASML"] (semiconductors that drop on Taiwan disruption — buy puts), providers ["news","market","polymarket","taiwan_incursions"]
+- "Banking crisis": keywords ["regional bank failure","bank run","FDIC takeover","deposit flight"], tickers ["KRE","XLF"], hedge_tickers ["KRE","XLF","BAC"], providers ["news","market"]
+- "Fed hawkish pivot": keywords ["Fed rate hike","hawkish Fed","inflation surprise"], tickers ["TLT","^VIX","DXY"], hedge_tickers ["TLT","SPY","QQQ"], providers ["news","market","polymarket"]
 
 No markdown, no prose. JSON only.`
 
@@ -193,17 +193,18 @@ No markdown, no prose. JSON only.`
     })
     const cleaned = text.replace(/```json\s*|```\s*/g, "").trim()
     const match = cleaned.match(/\{[\s\S]*\}/)
-    if (!match) return { keywords: [title], suggestedTickers: [], suggestedProviders: ["news"] }
+    if (!match) return { keywords: [title], suggestedTickers: [], suggestedHedgeTickers: [], suggestedProviders: ["news"] }
     const parsed = JSON.parse(match[0])
     const keywords = Array.isArray(parsed.keywords) ? parsed.keywords.filter((k: unknown) => typeof k === "string").slice(0, 6) : [title]
     const tickers = Array.isArray(parsed.suggested_tickers) ? parsed.suggested_tickers.filter((k: unknown) => typeof k === "string").slice(0, 5) : []
+    const hedges = Array.isArray(parsed.suggested_hedge_tickers) ? parsed.suggested_hedge_tickers.filter((k: unknown) => typeof k === "string").slice(0, 5) : []
     const VALID_PROVIDERS = ["news", "market", "polymarket", "taiwan_incursions"]
     const providersRaw = Array.isArray(parsed.suggested_providers)
       ? parsed.suggested_providers.filter((k: unknown) => typeof k === "string" && VALID_PROVIDERS.includes(k as string))
       : ["news"]
     const providers = providersRaw.includes("news") ? providersRaw : ["news", ...providersRaw]
-    return { keywords, suggestedTickers: tickers, suggestedProviders: providers }
+    return { keywords, suggestedTickers: tickers, suggestedHedgeTickers: hedges, suggestedProviders: providers }
   } catch {
-    return { keywords: [title], suggestedTickers: [], suggestedProviders: ["news"] }
+    return { keywords: [title], suggestedTickers: [], suggestedHedgeTickers: [], suggestedProviders: ["news"] }
   }
 }

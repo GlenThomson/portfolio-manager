@@ -4,6 +4,7 @@ import { runNewsProvider } from "./providers/news"
 import { runMarketProvider } from "./providers/market"
 import { runPolymarketProvider } from "./providers/polymarket"
 import { runTaiwanIncursionsProvider } from "./providers/taiwan-incursions"
+import { analyzeHedgeTickers, findHedgeAlignments, type HedgeSignal } from "./hedge-analysis"
 
 function serviceClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -19,6 +20,7 @@ interface RiskMonitorRow {
   description: string | null
   keywords: string[]
   linked_tickers: string[]
+  hedge_tickers: string[]
   providers: ProviderKey[]
   alert_on_level: number | null
   alert_on_change: number | null
@@ -116,6 +118,18 @@ export async function computeRiskScore(monitorId: string, opts: { force?: boolea
   const leader = [...contributing].sort((a, b) => b.score * b.weight - a.score * a.weight)[0]
   const summary = leader?.summary ?? "No data available yet."
 
+  // ── Hedge analysis ─────────────────────────────────────
+  // Run for any monitor with hedge_tickers, regardless of risk score.
+  // (We always want to see the hedge ticker status; alignment alerts only
+  // fire when both the risk is elevated AND a hedge is favorable.)
+  let hedges: HedgeSignal[] = []
+  let alignments: { symbol: string; reason: string; attractiveness: number }[] = []
+  const hedgeTickers = m.hedge_tickers ?? []
+  if (hedgeTickers.length > 0) {
+    hedges = await analyzeHedgeTickers(hedgeTickers)
+    alignments = findHedgeAlignments(composite, hedges)
+  }
+
   // Persist
   const scoresInsert = {
     monitor_id: m.id,
@@ -130,6 +144,8 @@ export async function computeRiskScore(monitorId: string, opts: { force?: boolea
         data: r.data,
         error: r.error,
       })),
+      hedges,
+      alignments,
       totalWeight,
       contributing: contributing.map((r) => r.key),
     },
@@ -139,6 +155,32 @@ export async function computeRiskScore(monitorId: string, opts: { force?: boolea
   }
 
   await supabase.from("risk_scores").insert(scoresInsert)
+
+  // Inbox alert for hedge alignments — only one item per monitor per day
+  if (alignments.length > 0) {
+    const today = new Date().toISOString().slice(0, 10)
+    const { data: existingHedge } = await supabase
+      .from("inbox_items")
+      .select("id")
+      .eq("user_id", m.user_id)
+      .eq("type", "hedge_opportunity")
+      .eq("symbol", m.id)
+      .gte("created_at", `${today}T00:00:00Z`)
+      .limit(1)
+
+    if (!existingHedge || existingHedge.length === 0) {
+      const top = alignments[0]
+      await supabase.from("inbox_items").insert({
+        user_id: m.user_id,
+        type: "hedge_opportunity",
+        severity: composite >= 70 ? "warning" : "info",
+        title: `${m.title}: ${top.symbol} entry conditions favorable`,
+        body: `Risk ${composite}/100 + ${top.symbol}: ${top.reason}. Consider protective trades.`,
+        symbol: m.id,
+        action_url: `/risks/${m.id}`,
+      })
+    }
+  }
 
   // Alert check
   const prevScore = m.latest_score != null ? Number(m.latest_score) : null

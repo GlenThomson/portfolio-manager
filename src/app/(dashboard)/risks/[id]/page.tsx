@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Loader2, ArrowLeft, RefreshCw, Shield, Trash2, ExternalLink, Newspaper, TrendingUp, Target, Plane } from "lucide-react"
+import { Loader2, ArrowLeft, RefreshCw, Shield, Trash2, ExternalLink, Newspaper, TrendingUp, Target, Plane, Crosshair } from "lucide-react"
 import Link from "next/link"
 
 interface Monitor {
@@ -13,12 +13,31 @@ interface Monitor {
   description: string | null
   keywords: string[]
   linked_tickers: string[]
+  hedge_tickers: string[]
   providers: string[]
   latest_score: number | null
   latest_score_at: string | null
   alert_on_level: number | null
   alert_on_change: number | null
   is_active: boolean
+}
+
+interface HedgeSignal {
+  symbol: string
+  currentPrice: number
+  rsi14: number | null
+  pct5d: number
+  pct30d: number
+  pctFrom52High: number
+  pctFrom52Low: number
+  attractiveness: number
+  signals: string[]
+}
+
+interface Alignment {
+  symbol: string
+  reason: string
+  attractiveness: number
 }
 
 interface ProviderBreakdown {
@@ -34,7 +53,12 @@ interface Score {
   id: string
   score: number
   summary: string | null
-  components: { providers?: ProviderBreakdown[]; totalWeight?: number } | null
+  components: {
+    providers?: ProviderBreakdown[]
+    hedges?: HedgeSignal[]
+    alignments?: Alignment[]
+    totalWeight?: number
+  } | null
   headlines: unknown
   computed_at: string
 }
@@ -180,6 +204,16 @@ export default function RiskDetailPage() {
         </div>
       )}
 
+      {/* Hedge candidates */}
+      {(monitor.hedge_tickers?.length ?? 0) > 0 && (
+        <HedgeCard
+          hedges={(scores[0]?.components?.hedges ?? []) as HedgeSignal[]}
+          alignments={(scores[0]?.components?.alignments ?? []) as Alignment[]}
+          riskScore={latestScore ?? 0}
+          monitorTitle={monitor.title}
+        />
+      )}
+
       {/* Score history */}
       {hasHistory && (
         <Card>
@@ -202,6 +236,103 @@ export default function RiskDetailPage() {
         </Card>
       )}
     </div>
+  )
+}
+
+// ── Hedge card ────────────────────────────────────────────
+
+function attractColor(score: number) {
+  if (score >= 60) return "#26a69a"
+  if (score >= 40) return "#ffab00"
+  if (score >= 20) return "#787b86"
+  return "#4a4e59"
+}
+
+function HedgeCard({ hedges, alignments, riskScore, monitorTitle }: { hedges: HedgeSignal[]; alignments: Alignment[]; riskScore: number; monitorTitle: string }) {
+  const alignedSyms = new Set(alignments.map((a) => a.symbol))
+  const hasAlignment = alignments.length > 0
+
+  return (
+    <Card className="relative overflow-hidden">
+      <div className="absolute top-0 left-0 w-1 h-full" style={{ background: hasAlignment ? "#26a69a" : "#4a4e59" }} />
+      <CardContent className="p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Crosshair className="h-4 w-4" style={{ color: hasAlignment ? "#26a69a" : "#787b86" }} />
+          <div className="text-sm font-semibold">Hedge candidates</div>
+          {hasAlignment && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold" style={{ background: "#26a69a20", color: "#26a69a" }}>
+              ALIGNMENT — risk + entry
+            </span>
+          )}
+        </div>
+
+        {hasAlignment && (
+          <div className="rounded p-2 mb-3 text-xs" style={{ background: "#26a69a15", border: "1px solid #26a69a40" }}>
+            <strong>{monitorTitle}</strong> risk is {riskScore}/100 AND these hedges show favorable entry conditions:
+            <ul className="mt-1 space-y-0.5">
+              {alignments.map((a) => (
+                <li key={a.symbol}>
+                  <Link href={`/stock/${a.symbol}`} className="font-semibold hover:underline">{a.symbol}</Link>
+                  <span className="text-muted-foreground ml-2">— {a.reason}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {hedges.length === 0 ? (
+          <div className="text-xs text-muted-foreground italic">No hedge data yet — refresh to compute.</div>
+        ) : (
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-muted-foreground border-b border-border">
+                <th className="text-left font-normal py-1">Ticker</th>
+                <th className="text-right font-normal">Price</th>
+                <th className="text-right font-normal">RSI</th>
+                <th className="text-right font-normal">5d</th>
+                <th className="text-right font-normal">Off 52w</th>
+                <th className="text-right font-normal">Entry</th>
+              </tr>
+            </thead>
+            <tbody>
+              {hedges
+                .sort((a, b) => b.attractiveness - a.attractiveness)
+                .map((h) => {
+                  const aligned = alignedSyms.has(h.symbol)
+                  return (
+                    <tr key={h.symbol} className={aligned ? "bg-emerald-500/5" : ""}>
+                      <td className="py-1.5 font-medium">
+                        <Link href={`/stock/${h.symbol}`} className="hover:underline">{h.symbol}</Link>
+                        {aligned && <span className="ml-1 text-[9px]" style={{ color: "#26a69a" }}>★</span>}
+                      </td>
+                      <td className="text-right">${h.currentPrice.toFixed(2)}</td>
+                      <td className="text-right" style={{ color: h.rsi14 == null ? "#787b86" : h.rsi14 < 30 ? "#26a69a" : h.rsi14 > 70 ? "#ef5350" : "#d1d4dc" }}>
+                        {h.rsi14 != null ? h.rsi14.toFixed(0) : "—"}
+                      </td>
+                      <td className="text-right" style={{ color: h.pct5d >= 0 ? "#26a69a" : "#ef5350" }}>
+                        {h.pct5d >= 0 ? "+" : ""}{h.pct5d.toFixed(1)}%
+                      </td>
+                      <td className="text-right" style={{ color: h.pctFrom52High <= -15 ? "#26a69a" : "#787b86" }}>
+                        {h.pctFrom52High.toFixed(1)}%
+                      </td>
+                      <td className="text-right font-bold" style={{ color: attractColor(h.attractiveness) }}>
+                        {h.attractiveness}
+                      </td>
+                    </tr>
+                  )
+                })}
+            </tbody>
+          </table>
+        )}
+
+        {hedges.length > 0 && (
+          <div className="mt-3 text-[10px] text-muted-foreground space-y-0.5">
+            <div>RSI &lt;30 oversold · 5d return · % below 52w high · Entry score 0-100 (higher = more favorable for protective trades)</div>
+            <div>Alignment fires when risk score ≥50 AND any hedge entry score ≥40.</div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 
