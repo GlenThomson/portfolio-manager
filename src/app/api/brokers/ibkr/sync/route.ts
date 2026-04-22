@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { fetchPositions, refreshAccessToken } from "@/lib/brokers/ibkr"
 import { createClient, getServerUserId } from "@/lib/supabase/server"
+import { nudgeNewPosition } from "@/lib/digest/nudge"
 
 export async function POST(request: NextRequest) {
   const supabase = createClient()
@@ -97,6 +98,7 @@ export async function POST(request: NextRequest) {
           average_cost: pos.averageCost.toString(),
           asset_type: pos.assetType,
         })
+        nudgeNewPosition(userId, pos.symbol, supabase)
       }
 
       // Record transaction for audit trail

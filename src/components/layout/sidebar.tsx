@@ -14,6 +14,7 @@ import {
   TrendingUp,
   DollarSign,
   MessageCircleWarning,
+  Shield,
 } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
@@ -24,6 +25,7 @@ const navItems = [
   { label: "Watchlist", href: "/watchlist", icon: Star },
   { label: "Markets", href: "/markets", icon: BarChart3 },
   { label: "Income", href: "/income", icon: DollarSign },
+  { label: "Risks", href: "/risks", icon: Shield },
   { label: "AI Chat", href: "/chat", icon: MessageSquare },
 ]
 

@@ -14,6 +14,7 @@ import { RedditSentiment } from "@/components/market/reddit-sentiment"
 import { StockScore } from "@/components/market/stock-score"
 import { StockNews } from "@/components/market/stock-news"
 import { OptionsChain } from "@/components/market/options-chain"
+import { PositionPlan } from "@/components/market/position-plan"
 import { Button } from "@/components/ui/button"
 import { Star, Plus, Loader2, BarChart3 } from "lucide-react"
 import { useRouter } from "next/navigation"
@@ -383,6 +384,7 @@ export default function StockDetailPage() {
       {/* ── Tab content ──────────────────────────────────── */}
       {activeTab === "overview" && (
         <div className="space-y-4">
+          <PositionPlan symbol={symbol} currentPrice={quote?.regularMarketPrice} />
           <StockScore symbol={symbol} />
           <FundamentalsGrid symbol={symbol} />
           <RedditSentiment symbol={symbol} />

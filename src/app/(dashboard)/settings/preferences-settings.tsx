@@ -3,13 +3,15 @@
 import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { DollarSign, Briefcase, Loader2, Check, Bell } from "lucide-react"
+import { DollarSign, Briefcase, Loader2, Check, Bell, Mail, Eye, Send } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface UserSettings {
   defaultCurrency?: string
   defaultPaperTrading?: boolean
   emailAlerts?: boolean
+  dailyDigest?: boolean
+  timezone?: string
 }
 
 interface PreferencesSettingsProps {
@@ -28,9 +30,36 @@ export function PreferencesSettings({ initialSettings }: PreferencesSettingsProp
   const [currency, setCurrency] = useState(initialSettings.defaultCurrency ?? "USD")
   const [paperTrading, setPaperTrading] = useState(initialSettings.defaultPaperTrading ?? false)
   const [emailAlerts, setEmailAlerts] = useState(initialSettings.emailAlerts ?? false)
+  const [dailyDigest, setDailyDigest] = useState(initialSettings.dailyDigest ?? false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [digestAction, setDigestAction] = useState<"idle" | "sending" | "sent" | "error">("idle")
+  const [digestMessage, setDigestMessage] = useState<string | null>(null)
+
+  async function handleSendNow() {
+    setDigestAction("sending")
+    setDigestMessage(null)
+    try {
+      const res = await fetch("/api/digest/send-now", { method: "POST" })
+      const data = await res.json()
+      if (!res.ok) {
+        setDigestAction("error")
+        setDigestMessage(data.error ?? "Send failed")
+      } else {
+        setDigestAction("sent")
+        setDigestMessage(`Sent to ${data.sentTo}`)
+        setTimeout(() => setDigestAction("idle"), 3000)
+      }
+    } catch (err) {
+      setDigestAction("error")
+      setDigestMessage(err instanceof Error ? err.message : "Send failed")
+    }
+  }
+
+  function handlePreview() {
+    window.open("/api/digest/preview?format=html", "_blank", "noopener,noreferrer")
+  }
 
   async function handleSave() {
     setSaving(true)
@@ -46,6 +75,7 @@ export function PreferencesSettings({ initialSettings }: PreferencesSettingsProp
             defaultCurrency: currency,
             defaultPaperTrading: paperTrading,
             emailAlerts,
+            dailyDigest,
           },
         }),
       })
@@ -208,6 +238,73 @@ export function PreferencesSettings({ initialSettings }: PreferencesSettingsProp
               "Save Preferences"
             )}
           </Button>
+        </CardContent>
+      </Card>
+
+      {/* Daily Digest */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Mail className="h-5 w-5" />
+            Daily Digest
+          </CardTitle>
+          <CardDescription>
+            Morning email summarising your portfolio, plan status, top movers, and any action items.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div
+            className="flex items-center justify-between rounded-lg border border-border p-4 cursor-pointer hover:bg-accent/50 transition-colors"
+            onClick={() => setDailyDigest(!dailyDigest)}
+          >
+            <div className="space-y-0.5">
+              <p className="text-sm font-medium">Email me a daily digest</p>
+              <p className="text-xs text-muted-foreground">
+                One email per morning, only during active days. Your plans drive what gets highlighted.
+              </p>
+            </div>
+            <button
+              role="switch"
+              aria-checked={dailyDigest}
+              onClick={(e) => { e.stopPropagation(); setDailyDigest(!dailyDigest) }}
+              className={cn(
+                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                dailyDigest ? "bg-primary" : "bg-input"
+              )}
+            >
+              <span
+                className={cn(
+                  "pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform",
+                  dailyDigest ? "translate-x-5" : "translate-x-0"
+                )}
+              />
+            </button>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={handlePreview}>
+              <Eye className="h-3.5 w-3.5 mr-1" />
+              Preview in browser
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleSendNow} disabled={digestAction === "sending"}>
+              {digestAction === "sending" ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+              ) : digestAction === "sent" ? (
+                <Check className="h-3.5 w-3.5 mr-1" />
+              ) : (
+                <Send className="h-3.5 w-3.5 mr-1" />
+              )}
+              Send me a digest now
+            </Button>
+          </div>
+          {digestMessage && (
+            <p className={cn(
+              "text-xs",
+              digestAction === "error" ? "text-destructive" : "text-muted-foreground"
+            )}>
+              {digestMessage}
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>

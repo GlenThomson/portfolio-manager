@@ -11,6 +11,7 @@ import {
 import { Sidebar } from "./sidebar"
 import { SearchCommand } from "./search-command"
 import { MarketStatus } from "@/components/market/market-status"
+import { InboxWidget } from "./inbox-widget"
 
 export const TopNav = memo(function TopNav() {
   return (
@@ -36,6 +37,9 @@ export const TopNav = memo(function TopNav() {
       <div className="flex-1 min-w-0">
         <SearchCommand />
       </div>
+
+      {/* Inbox */}
+      <InboxWidget />
 
       {/* Market status */}
       <div className="hidden sm:flex">
