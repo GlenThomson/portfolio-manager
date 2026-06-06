@@ -1,14 +1,27 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Loader2, Sparkles, X } from "lucide-react"
+
+export interface RiskMonitorInitial {
+  id: string
+  title: string
+  description: string | null
+  keywords: string[]
+  linked_tickers: string[]
+  hedge_tickers: string[]
+  providers: string[]
+  alert_on_level: number | null
+  alert_on_change: number | null
+}
 
 interface Props {
   open: boolean
   onOpenChange: (v: boolean) => void
   onCreated: () => void
+  initial?: RiskMonitorInitial // when set, dialog runs in edit mode
 }
 
 const PROVIDERS = [
@@ -18,18 +31,35 @@ const PROVIDERS = [
   { key: "taiwan_incursions", label: "PLA ADIZ incursions", description: "Extracts PLA aircraft/vessel counts from Taiwan news (Taiwan-specific)." },
 ] as const
 
-export function RiskCreateDialog({ open, onOpenChange, onCreated }: Props) {
-  const [title, setTitle] = useState("")
-  const [description, setDescription] = useState("")
-  const [keywords, setKeywords] = useState<string[]>([])
-  const [linkedTickers, setLinkedTickers] = useState<string[]>([])
-  const [hedgeTickers, setHedgeTickers] = useState<string[]>([])
-  const [providers, setProviders] = useState<string[]>(["news"])
-  const [alertOnLevel, setAlertOnLevel] = useState<string>("")
-  const [alertOnChange, setAlertOnChange] = useState<string>("")
+export function RiskCreateDialog({ open, onOpenChange, onCreated, initial }: Props) {
+  const isEdit = !!initial
+  const [title, setTitle] = useState(initial?.title ?? "")
+  const [description, setDescription] = useState(initial?.description ?? "")
+  const [keywords, setKeywords] = useState<string[]>(initial?.keywords ?? [])
+  const [linkedTickers, setLinkedTickers] = useState<string[]>(initial?.linked_tickers ?? [])
+  const [hedgeTickers, setHedgeTickers] = useState<string[]>(initial?.hedge_tickers ?? [])
+  const [providers, setProviders] = useState<string[]>(initial?.providers ?? ["news"])
+  const [alertOnLevel, setAlertOnLevel] = useState<string>(initial?.alert_on_level != null ? String(initial.alert_on_level) : "")
+  const [alertOnChange, setAlertOnChange] = useState<string>(initial?.alert_on_change != null ? String(initial.alert_on_change) : "")
   const [suggesting, setSuggesting] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Re-sync form when `initial` changes (e.g. dialog reopened with different monitor)
+  useEffect(() => {
+    if (!open) return
+    if (initial) {
+      setTitle(initial.title)
+      setDescription(initial.description ?? "")
+      setKeywords(initial.keywords ?? [])
+      setLinkedTickers(initial.linked_tickers ?? [])
+      setHedgeTickers(initial.hedge_tickers ?? [])
+      setProviders(initial.providers ?? ["news"])
+      setAlertOnLevel(initial.alert_on_level != null ? String(initial.alert_on_level) : "")
+      setAlertOnChange(initial.alert_on_change != null ? String(initial.alert_on_change) : "")
+    }
+    setError(null)
+  }, [open, initial])
 
   const reset = () => {
     setTitle("")
@@ -83,31 +113,40 @@ export function RiskCreateDialog({ open, onOpenChange, onCreated }: Props) {
     setSaving(true)
     setError(null)
     try {
-      const createRes = await fetch("/api/risks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: title.trim(),
-          description: description.trim() || null,
-          keywords,
-          linked_tickers: linkedTickers,
-          hedge_tickers: hedgeTickers,
-          providers,
-          alert_on_level: alertOnLevel ? parseInt(alertOnLevel) : null,
-          alert_on_change: alertOnChange ? parseInt(alertOnChange) : null,
-        }),
-      })
-      if (!createRes.ok) {
-        const j = await createRes.json().catch(() => ({}))
+      const body = {
+        title: title.trim(),
+        description: description.trim() || null,
+        keywords,
+        linked_tickers: linkedTickers,
+        hedge_tickers: hedgeTickers,
+        providers,
+        alert_on_level: alertOnLevel ? parseInt(alertOnLevel) : null,
+        alert_on_change: alertOnChange ? parseInt(alertOnChange) : null,
+      }
+      const res = isEdit
+        ? await fetch("/api/risks", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: initial!.id, ...body }),
+          })
+        : await fetch("/api/risks", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          })
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
         setError(j.error ?? "Save failed")
         return
       }
-      const created = await createRes.json()
+      const saved = await res.json()
 
-      // Compute first score immediately (fire and forget — UI will refresh)
-      fetch(`/api/risks/${created.id}/compute`, { method: "POST" }).catch(() => {})
+      // For new monitors, kick off first compute. For edits we skip — user can hit Refresh.
+      if (!isEdit) {
+        fetch(`/api/risks/${saved.id}/compute`, { method: "POST" }).catch(() => {})
+      }
 
-      reset()
+      if (!isEdit) reset()
       onOpenChange(false)
       onCreated()
     } catch (err) {
@@ -138,9 +177,11 @@ export function RiskCreateDialog({ open, onOpenChange, onCreated }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Create risk monitor</DialogTitle>
+          <DialogTitle>{isEdit ? "Edit risk monitor" : "Create risk monitor"}</DialogTitle>
           <DialogDescription>
-            Describe any downside risk in plain English. AI scans news daily and produces a 0-100 score.
+            {isEdit
+              ? "Update keywords, providers, or alert thresholds. Save to apply on the next compute."
+              : "Describe any downside risk in plain English. AI scans news daily and produces a 0-100 score."}
           </DialogDescription>
         </DialogHeader>
 
@@ -305,10 +346,10 @@ export function RiskCreateDialog({ open, onOpenChange, onCreated }: Props) {
           {error && <p className="text-sm text-destructive">{error}</p>}
 
           <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={() => { reset(); onOpenChange(false) }}>Cancel</Button>
+            <Button variant="outline" onClick={() => { if (!isEdit) reset(); onOpenChange(false) }}>Cancel</Button>
             <Button onClick={save} disabled={saving || !title.trim()}>
               {saving && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
-              Create & compute
+              {isEdit ? "Save changes" : "Create & compute"}
             </Button>
           </div>
         </div>

@@ -105,34 +105,58 @@ export async function fetchInvestmentAccounts(userToken: string, appTokenOverrid
   )
 
   const holdings: AkahuHolding[] = []
+  const walletBalances: { accountId: string; name: string; connectionName: string; cashValue: number; currency: string }[] = []
 
   for (const account of investmentAccounts) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const meta = (account as any).meta
-    if (!meta?.portfolio) continue
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const accBalance = (account as any).balance?.current ?? 0
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const currency = (account as any).balance?.currency ?? "NZD"
 
-    // Portfolio can be an array of holdings
-    const portfolio = Array.isArray(meta.portfolio) ? meta.portfolio : []
+    let totalHoldingsValue = 0
 
-    for (const item of portfolio) {
-      const name = item.name ?? item.fund_name ?? item.instrument_name ?? ""
-      const quantity = parseFloat(item.quantity ?? item.units ?? item.shares ?? "0")
-      const currentValue = parseFloat(item.current_value ?? item.balance ?? item.value ?? "0")
-      const pricePerUnit = quantity > 0 ? currentValue / quantity : 0
+    if (meta?.portfolio) {
+      const portfolio = Array.isArray(meta.portfolio) ? meta.portfolio : []
+      for (const item of portfolio) {
+        const name = item.name ?? item.fund_name ?? item.instrument_name ?? ""
+        const quantity = parseFloat(item.quantity ?? item.units ?? item.shares ?? "0")
+        const currentValue = parseFloat(item.current_value ?? item.balance ?? item.value ?? "0")
+        const pricePerUnit = quantity > 0 ? currentValue / quantity : 0
 
-      if (!name || quantity <= 0) continue
+        if (!name || quantity <= 0) continue
 
-      holdings.push({
-        name,
-        // Sharesies provides ticker symbols directly in the portfolio data
-        ticker: item.ticker ?? undefined,
-        code: item.code ?? undefined,
-        symbol: item.symbol ?? undefined,
-        quantity,
-        currentValue,
-        pricePerUnit,
+        totalHoldingsValue += currentValue
+
+        holdings.push({
+          name,
+          // Sharesies provides ticker symbols directly in the portfolio data
+          ticker: item.ticker ?? undefined,
+          code: item.code ?? undefined,
+          symbol: item.symbol ?? undefined,
+          quantity,
+          currentValue,
+          pricePerUnit,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          accountId: (account as any)._id,
+        })
+      }
+    }
+
+    // Capture wallet/uninvested cash for this investment account.
+    // Sharesies wallet: balance > sum(holdings). PIE savings: balance only, no portfolio.
+    const cashValue = accBalance - totalHoldingsValue
+    if (cashValue > 0.01) {
+      walletBalances.push({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         accountId: (account as any)._id,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        name: (account as any).name,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        connectionName: (account as any).connection?.name ?? "",
+        cashValue,
+        currency,
       })
     }
   }
@@ -148,6 +172,7 @@ export async function fetchInvestmentAccounts(userToken: string, appTokenOverrid
       currency: a.balance?.currency ?? "NZD",
     })),
     holdings,
+    walletBalances,
   }
 }
 

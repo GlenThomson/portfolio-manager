@@ -3,6 +3,7 @@ import { createClient as createServiceClient } from "@supabase/supabase-js"
 import { generateDigestForUser, persistDigest } from "@/lib/digest/generate"
 import { sendDigestEmail } from "@/lib/email/digest"
 import { computeAllRisksForUser } from "@/lib/risks/compute"
+import { syncAkahuForAllUsers } from "@/lib/brokers/akahu-sync"
 
 export const maxDuration = 60
 
@@ -35,6 +36,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Missing Supabase env vars" }, { status: 500 })
   }
   const supabase = createServiceClient(url, key, { auth: { persistSession: false } })
+
+  // Sync Akahu investments for all connected users BEFORE generating digests
+  // so positions are fresh. Non-blocking — failure here doesn't stop digest sending.
+  let akahuSyncResult: { synced: number; failed: number } | { error: string } | null = null
+  try {
+    akahuSyncResult = await syncAkahuForAllUsers(supabase)
+  } catch (err) {
+    akahuSyncResult = { error: err instanceof Error ? err.message : String(err) }
+  }
 
   // Load all users with profiles (we'll filter by digest opt-in)
   const { data: profiles, error: profilesError } = await supabase
@@ -110,5 +120,6 @@ export async function GET(request: NextRequest) {
     skipped: results.filter((r) => r.status.startsWith("skipped")).length,
     failed: results.filter((r) => r.status === "error" || r.status === "email_failed").length,
     results,
+    akahuSync: akahuSyncResult,
   })
 }

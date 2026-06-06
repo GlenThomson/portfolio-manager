@@ -41,8 +41,14 @@ export async function middleware(request: NextRequest) {
 
   // Redirect unauthenticated users to login (except public routes and market API)
   if (!user && !isPublicRoute) {
-    // Allow market/chart API routes without auth (they don't expose user data)
-    if (isApiRoute && (pathname.startsWith("/api/market") || pathname.startsWith("/api/auth"))) {
+    // Allow public/cron API routes without auth.
+    // Cron endpoints have their own bearer-token auth via CRON_SECRET.
+    if (isApiRoute && (
+      pathname.startsWith("/api/market") ||
+      pathname.startsWith("/api/auth") ||
+      pathname.startsWith("/api/cron") ||
+      pathname.startsWith("/api/debug")
+    )) {
       return supabaseResponse
     }
 

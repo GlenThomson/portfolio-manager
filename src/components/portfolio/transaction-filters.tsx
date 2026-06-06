@@ -14,7 +14,26 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Search, X, ArrowUpDown } from "lucide-react"
+import { Search, X, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react"
+import { cn } from "@/lib/utils"
+import { StockLogo } from "@/components/ui/stock-logo"
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function SortableHead({ col, align, sortCol, sortDir, onToggle, children }: { col: any; align: "left" | "right"; sortCol: any; sortDir: "asc" | "desc"; onToggle: (c: any) => void; children: React.ReactNode }) {
+  const active = sortCol === col
+  const Icon = !active ? ArrowUpDown : sortDir === "desc" ? ArrowDown : ArrowUp
+  return (
+    <TableHead
+      className={cn("cursor-pointer select-none hover:bg-muted/40 transition-colors", align === "right" && "text-right")}
+      onClick={() => onToggle(col)}
+    >
+      <div className={cn("flex items-center gap-1", align === "right" && "justify-end")}>
+        {children}
+        <Icon className={cn("h-3 w-3", active ? "text-foreground" : "text-muted-foreground/50")} />
+      </div>
+    </TableHead>
+  )
+}
 
 interface Transaction {
   id: string
@@ -41,7 +60,17 @@ export function TransactionFilters({ portfolioId }: TransactionFiltersProps) {
   const [actionFilter, setActionFilter] = useState<string>("")
   const [dateFrom, setDateFrom] = useState("")
   const [dateTo, setDateTo] = useState("")
+  const [sortCol, setSortCol] = useState<"date" | "symbol" | "action" | "quantity" | "price" | "fees" | "total">("date")
   const [sortDir, setSortDir] = useState<SortDirection>("desc")
+
+  const toggleSort = (col: typeof sortCol) => {
+    if (sortCol === col) {
+      setSortDir(sortDir === "desc" ? "asc" : "desc")
+    } else {
+      setSortCol(col)
+      setSortDir("desc")
+    }
+  }
 
   useEffect(() => {
     fetchTransactions()
@@ -97,15 +126,39 @@ export function TransactionFilters({ portfolioId }: TransactionFiltersProps) {
       result = result.filter((t) => new Date(t.executed_at) <= to)
     }
 
-    // Sort by date
+    // Multi-column sort
+    const sign = sortDir === "desc" ? -1 : 1
     result.sort((a, b) => {
-      const dateA = new Date(a.executed_at).getTime()
-      const dateB = new Date(b.executed_at).getTime()
-      return sortDir === "desc" ? dateB - dateA : dateA - dateB
+      let cmp = 0
+      switch (sortCol) {
+        case "date":
+          cmp = new Date(a.executed_at).getTime() - new Date(b.executed_at).getTime()
+          break
+        case "symbol":
+          cmp = a.symbol.localeCompare(b.symbol)
+          break
+        case "action":
+          cmp = a.action.localeCompare(b.action)
+          break
+        case "quantity":
+          cmp = parseFloat(a.quantity) - parseFloat(b.quantity)
+          break
+        case "price":
+          cmp = parseFloat(a.price) - parseFloat(b.price)
+          break
+        case "fees":
+          cmp = parseFloat(a.fees ?? "0") - parseFloat(b.fees ?? "0")
+          break
+        case "total":
+          cmp = (parseFloat(a.quantity) * parseFloat(a.price) + parseFloat(a.fees ?? "0"))
+              - (parseFloat(b.quantity) * parseFloat(b.price) + parseFloat(b.fees ?? "0"))
+          break
+      }
+      return cmp * sign
     })
 
     return result
-  }, [transactions, symbolFilter, actionFilter, dateFrom, dateTo, sortDir])
+  }, [transactions, symbolFilter, actionFilter, dateFrom, dateTo, sortCol, sortDir])
 
   function clearFilters() {
     setSymbolFilter("")
@@ -212,21 +265,13 @@ export function TransactionFilters({ portfolioId }: TransactionFiltersProps) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead
-                  className="cursor-pointer select-none"
-                  onClick={() => setSortDir(sortDir === "desc" ? "asc" : "desc")}
-                >
-                  <div className="flex items-center gap-1">
-                    Date
-                    <ArrowUpDown className="h-3 w-3" />
-                  </div>
-                </TableHead>
-                <TableHead>Symbol</TableHead>
-                <TableHead>Action</TableHead>
-                <TableHead className="text-right">Quantity</TableHead>
-                <TableHead className="text-right">Price</TableHead>
-                <TableHead className="text-right">Fees</TableHead>
-                <TableHead className="text-right">Total</TableHead>
+                <SortableHead col="date" align="left" sortCol={sortCol} sortDir={sortDir} onToggle={toggleSort}>Date</SortableHead>
+                <SortableHead col="symbol" align="left" sortCol={sortCol} sortDir={sortDir} onToggle={toggleSort}>Symbol</SortableHead>
+                <SortableHead col="action" align="left" sortCol={sortCol} sortDir={sortDir} onToggle={toggleSort}>Action</SortableHead>
+                <SortableHead col="quantity" align="right" sortCol={sortCol} sortDir={sortDir} onToggle={toggleSort}>Quantity</SortableHead>
+                <SortableHead col="price" align="right" sortCol={sortCol} sortDir={sortDir} onToggle={toggleSort}>Price</SortableHead>
+                <SortableHead col="fees" align="right" sortCol={sortCol} sortDir={sortDir} onToggle={toggleSort}>Fees</SortableHead>
+                <SortableHead col="total" align="right" sortCol={sortCol} sortDir={sortDir} onToggle={toggleSort}>Total</SortableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -248,7 +293,12 @@ export function TransactionFilters({ portfolioId }: TransactionFiltersProps) {
                       <TableCell>
                         {new Date(tx.executed_at).toLocaleDateString()}
                       </TableCell>
-                      <TableCell className="font-medium">{tx.symbol}</TableCell>
+                      <TableCell className="font-medium">
+                        <span className="inline-flex items-center gap-2">
+                          <StockLogo symbol={tx.symbol} size={18} />
+                          {tx.symbol}
+                        </span>
+                      </TableCell>
                       <TableCell>
                         <Badge
                           variant="outline"

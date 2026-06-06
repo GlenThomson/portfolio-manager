@@ -20,6 +20,7 @@ import { Plus, Star, TrendingUp, TrendingDown, X, Loader2, BarChart3 } from "luc
 import { cn } from "@/lib/utils"
 import { useCurrency } from "@/hooks/useCurrency"
 import { useWatchlistMeta, useWatchlistQuotes, fetchSingleQuote } from "@/hooks/use-watchlist-data"
+import { StockLogo } from "@/components/ui/stock-logo"
 import type { WatchlistItem } from "@/hooks/use-watchlist-data"
 
 export default function WatchlistPage() {
@@ -201,6 +202,7 @@ export default function WatchlistPage() {
                     )}
                   </button>
                   <Link href={`/stock/${symbol}`} className="flex-1 flex items-center gap-4">
+                    <StockLogo symbol={symbol} size={28} />
                     <div className="min-w-[100px]">
                       <p className="font-bold text-primary">{symbol}</p>
                       <p className="text-xs text-muted-foreground truncate max-w-[120px]">

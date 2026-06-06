@@ -538,8 +538,8 @@ export function BrokerConnectDialog({
           {/* ── Interactive Brokers Tab ──────────────────── */}
           <TabsContent value="ibkr" className="space-y-4 mt-4">
             <p className="text-sm text-muted-foreground">
-              Connect your Interactive Brokers account to sync positions automatically.
-              Uses read-only access — no trading permissions.
+              Connect IBKR via the <strong>Flex Web Service</strong> — read-only, free, self-serve.
+              No trading permissions.
             </p>
 
             {ibkrConnected ? (
@@ -556,13 +556,21 @@ export function BrokerConnectDialog({
                   )}
                   Sync Positions
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-destructive"
+                  onClick={async () => {
+                    if (!confirm("Disconnect IBKR? Your synced positions stay, but won't update.")) return
+                    await fetch("/api/brokers/ibkr/connect", { method: "DELETE" })
+                    window.location.reload()
+                  }}
+                >
+                  Disconnect
+                </Button>
               </div>
             ) : (
-              <Button asChild className="w-full">
-                <a href={`/api/brokers/ibkr/authorize?portfolioId=${portfolioId}`}>
-                  Connect Interactive Brokers
-                </a>
-              </Button>
+              <IbkrFlexConnectForm onConnected={onImportComplete} />
             )}
           </TabsContent>
 
@@ -822,5 +830,91 @@ export function BrokerConnectDialog({
         )}
       </DialogContent>
     </Dialog>
+  )
+}
+
+function IbkrFlexConnectForm({ onConnected }: { onConnected: () => void }) {
+  const [token, setToken] = useState("")
+  const [queryId, setQueryId] = useState("")
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [result, setResult] = useState<{ positionsFound: number; accountIds: string[] } | null>(null)
+
+  async function connect() {
+    setSubmitting(true)
+    setError(null)
+    setResult(null)
+    try {
+      const res = await fetch("/api/brokers/ibkr/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: token.trim(), queryId: queryId.trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setError(data.error ?? "Connection failed")
+        return
+      }
+      setResult({ positionsFound: data.positionsFound, accountIds: data.accountIds })
+      onConnected()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Connection failed")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <details className="text-sm rounded border border-border p-3">
+        <summary className="cursor-pointer font-medium">How to get your Flex Web Service token + query ID</summary>
+        <ol className="list-decimal pl-5 mt-2 space-y-2 text-muted-foreground text-xs">
+          <li>Log into <a href="https://www.interactivebrokers.com/portal" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">IBKR Account Management</a></li>
+          <li>Go to <strong>Performance &amp; Reports → Flex Queries</strong></li>
+          <li>Under <em>Activity Flex Query</em>, click <strong>Create</strong> (or pick an existing one)</li>
+          <li>Name it (e.g. <em>PortfolioAI</em>), set <strong>Period</strong> to <em>Last Business Day</em>, <strong>Format</strong> XML, <strong>Period</strong> Daily</li>
+          <li>Tick at minimum <strong>Open Positions</strong>. Optionally tick Trades, Cash Report</li>
+          <li>Save. You'll see a <strong>Query ID</strong> (8-digit number) next to it — copy that into the field below</li>
+          <li>Now go to <strong>Settings → Account Settings → Flex Web Service</strong>, click <strong>Configure</strong>, and enable it</li>
+          <li>It'll show your <strong>Token</strong> (16-20 digit number) — copy into the field below</li>
+          <li>Both values are numeric. They never expire unless you regenerate them</li>
+        </ol>
+      </details>
+
+      <div>
+        <label className="text-xs uppercase tracking-wider text-muted-foreground block mb-1">Flex Web Service Token</label>
+        <input
+          type="text"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          placeholder="e.g. 12345678901234567"
+          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono"
+          autoComplete="off"
+        />
+      </div>
+      <div>
+        <label className="text-xs uppercase tracking-wider text-muted-foreground block mb-1">Query ID</label>
+        <input
+          type="text"
+          value={queryId}
+          onChange={(e) => setQueryId(e.target.value)}
+          placeholder="e.g. 12345678"
+          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono"
+          autoComplete="off"
+        />
+      </div>
+
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      {result && (
+        <p className="text-sm text-emerald-500">
+          Connected — found {result.positionsFound} positions across {result.accountIds.length} account(s).
+        </p>
+      )}
+
+      <Button onClick={connect} disabled={submitting || !token.trim() || !queryId.trim()} className="w-full">
+        {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+        {submitting ? "Verifying with IBKR…" : "Connect"}
+      </Button>
+    </div>
   )
 }

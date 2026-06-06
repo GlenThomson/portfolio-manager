@@ -396,3 +396,47 @@ export async function getInsiderSentiment(
   setCache(cacheKey, sentiments, CACHE_TTL_MEDIUM)
   return sentiments
 }
+
+// ── Company Profile (logo, name, weburl) ──────────────────
+
+export interface CompanyProfile {
+  symbol: string
+  name: string
+  logo: string | null
+  weburl: string | null
+  finnhubIndustry: string | null
+  country: string | null
+  exchange: string | null
+}
+
+export async function getCompanyProfile(symbol: string): Promise<CompanyProfile | null> {
+  const cacheKey = `profile:${symbol}`
+  const cached = getCached<CompanyProfile>(cacheKey)
+  if (cached !== null) return cached
+
+  if (!isFinnhubConfigured()) return null
+  if (!checkRateLimit()) return null
+
+  const url = `${FINNHUB_BASE}/stock/profile2?symbol=${encodeURIComponent(symbol)}&token=${FINNHUB_API_KEY}`
+  const res = await fetch(url)
+  if (!res.ok) return null
+
+  const data = await res.json()
+  // Finnhub returns {} (empty object) for unknown symbols
+  if (!data || !data.ticker) {
+    setCache(cacheKey, null as unknown as CompanyProfile, CACHE_TTL_MEDIUM)
+    return null
+  }
+
+  const profile: CompanyProfile = {
+    symbol: data.ticker ?? symbol,
+    name: data.name ?? symbol,
+    logo: typeof data.logo === "string" && data.logo.length > 0 ? data.logo : null,
+    weburl: data.weburl ?? null,
+    finnhubIndustry: data.finnhubIndustry ?? null,
+    country: data.country ?? null,
+    exchange: data.exchange ?? null,
+  }
+  setCache(cacheKey, profile, CACHE_TTL_MEDIUM)
+  return profile
+}

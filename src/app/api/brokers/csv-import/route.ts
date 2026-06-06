@@ -142,6 +142,7 @@ export async function POST(request: NextRequest) {
         quantity: "1",
         average_cost: row.price.toString(), // balance stored as average_cost
         asset_type: "cash",
+        source: "csv",
       })
     } else if (row.action === "buy" || row.action === "sell") {
       const { data: existingPos } = await supabase
@@ -189,6 +190,7 @@ export async function POST(request: NextRequest) {
           quantity: row.quantity.toString(),
           average_cost: row.price.toString(),
           asset_type: "stock",
+          source: "csv",
         })
       }
     }
