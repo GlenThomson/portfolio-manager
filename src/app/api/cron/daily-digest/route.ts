@@ -4,6 +4,7 @@ import { generateDigestForUser, persistDigest } from "@/lib/digest/generate"
 import { sendDigestEmail } from "@/lib/email/digest"
 import { computeAllRisksForUser } from "@/lib/risks/compute"
 import { syncAkahuForAllUsers } from "@/lib/brokers/akahu-sync"
+import { scanForAllUsers as scanPolymarketForAllUsers } from "@/lib/polymarket/scan"
 
 export const maxDuration = 60
 
@@ -44,6 +45,14 @@ export async function GET(request: NextRequest) {
     akahuSyncResult = await syncAkahuForAllUsers(supabase)
   } catch (err) {
     akahuSyncResult = { error: err instanceof Error ? err.message : String(err) }
+  }
+
+  // Polymarket scan — fire-and-forget; survival of bad data shouldn't break the digest
+  let polymarketResult: { usersProcessed: number; totalMatches: number } | { error: string } | null = null
+  try {
+    polymarketResult = await scanPolymarketForAllUsers()
+  } catch (err) {
+    polymarketResult = { error: err instanceof Error ? err.message : String(err) }
   }
 
   // Load all users with profiles (we'll filter by digest opt-in)
@@ -121,5 +130,6 @@ export async function GET(request: NextRequest) {
     failed: results.filter((r) => r.status === "error" || r.status === "email_failed").length,
     results,
     akahuSync: akahuSyncResult,
+    polymarket: polymarketResult,
   })
 }
