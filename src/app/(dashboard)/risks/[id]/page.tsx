@@ -4,8 +4,9 @@ import { useEffect, useState, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Loader2, ArrowLeft, RefreshCw, Shield, Trash2, ExternalLink, Newspaper, TrendingUp, Target, Plane, Crosshair } from "lucide-react"
+import { Loader2, ArrowLeft, RefreshCw, Shield, Trash2, ExternalLink, Newspaper, TrendingUp, Target, Plane, Crosshair, Pencil } from "lucide-react"
 import Link from "next/link"
+import { RiskCreateDialog } from "@/components/risks/risk-create-dialog"
 
 interface Monitor {
   id: string
@@ -86,6 +87,7 @@ export default function RiskDetailPage() {
   const [scores, setScores] = useState<Score[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -151,11 +153,31 @@ export default function RiskDetailPage() {
             {refreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <RefreshCw className="h-3.5 w-3.5 mr-1" />}
             Refresh
           </Button>
+          <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
+            <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
+          </Button>
           <Button size="sm" variant="outline" onClick={remove}>
             <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
           </Button>
         </div>
       </div>
+
+      <RiskCreateDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        onCreated={fetchData}
+        initial={{
+          id: monitor.id,
+          title: monitor.title,
+          description: monitor.description,
+          keywords: monitor.keywords,
+          linked_tickers: monitor.linked_tickers,
+          hedge_tickers: monitor.hedge_tickers ?? [],
+          providers: monitor.providers,
+          alert_on_level: monitor.alert_on_level,
+          alert_on_change: monitor.alert_on_change,
+        }}
+      />
 
       {/* Header card */}
       <Card>

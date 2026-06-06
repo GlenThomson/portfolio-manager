@@ -39,11 +39,19 @@ export async function searchGoogleNews(
   const url = `https://news.google.com/rss/search?q=${encoded}&hl=en-US&gl=US&ceid=US:en`
 
   const res = await fetch(url, {
-    headers: { "User-Agent": "Mozilla/5.0 (PortfolioAI risk monitor)" },
+    headers: {
+      // Real browser UA — Google News throttles or blocks unknown UAs from Vercel egress.
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Accept": "application/rss+xml, application/xml, text/xml, */*",
+      "Accept-Language": "en-US,en;q=0.9",
+    },
     // Keep it short — we're running inside a cron, don't want to hang.
     signal: AbortSignal.timeout(15000),
   })
-  if (!res.ok) return []
+  if (!res.ok) {
+    console.error(`Google News fetch failed: ${res.status} for query "${query}"`)
+    return []
+  }
 
   const xml = await res.text()
   const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)]

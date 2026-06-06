@@ -79,12 +79,43 @@ export async function DELETE(request: NextRequest) {
   const id = searchParams.get("id")
   if (!id) return NextResponse.json({ error: "ID is required" }, { status: 400 })
 
+  // Look up the asset to see if it was Akahu-sourced. If so, also add its ref to
+  // the user's ignore list so the next sync doesn't recreate it.
+  const { data: asset } = await supabase
+    .from("assets")
+    .select("id, notes")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .single()
+
+  if (!asset) return NextResponse.json({ error: "Asset not found" }, { status: 404 })
+
+  const akahuRef = asset.notes && asset.notes.startsWith("akahu-") ? asset.notes : null
+
   const { error } = await supabase
     .from("assets")
     .delete()
     .eq("id", id)
     .eq("user_id", user.id)
-
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ success: true })
+
+  if (akahuRef) {
+    // Add to ignore list in user_profiles.settings
+    const { data: profile } = await supabase
+      .from("user_profiles")
+      .select("id, settings")
+      .eq("user_id", user.id)
+      .single()
+    const existingSettings = (profile?.settings ?? {}) as { ignoredAkahuRefs?: string[] }
+    const ignored = new Set(existingSettings.ignoredAkahuRefs ?? [])
+    ignored.add(akahuRef)
+    const updatedSettings = { ...existingSettings, ignoredAkahuRefs: Array.from(ignored) }
+    if (profile) {
+      await supabase.from("user_profiles").update({ settings: updatedSettings }).eq("id", profile.id)
+    } else {
+      await supabase.from("user_profiles").insert({ user_id: user.id, settings: updatedSettings })
+    }
+  }
+
+  return NextResponse.json({ success: true, ignoredAkahuRef: akahuRef })
 }

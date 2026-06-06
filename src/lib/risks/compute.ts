@@ -5,11 +5,18 @@ import { runMarketProvider } from "./providers/market"
 import { runPolymarketProvider } from "./providers/polymarket"
 import { runTaiwanIncursionsProvider } from "./providers/taiwan-incursions"
 import { analyzeHedgeTickers, findHedgeAlignments, type HedgeSignal } from "./hedge-analysis"
+import { sendRiskAlertEmail } from "@/lib/email/risk-alert"
 
 function serviceClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY or NEXT_PUBLIC_SUPABASE_URL")
+  if (!url || !key) {
+    const missing = [
+      !url ? "NEXT_PUBLIC_SUPABASE_URL" : null,
+      !key ? "SUPABASE_SERVICE_ROLE_KEY" : null,
+    ].filter(Boolean).join(", ")
+    throw new Error(`Missing env: ${missing}`)
+  }
   return createServiceClient(url, key, { auth: { persistSession: false } })
 }
 
@@ -226,6 +233,30 @@ export async function computeRiskScore(monitorId: string, opts: { force?: boolea
         symbol: m.id,
         action_url: `/risks/${m.id}`,
       })
+
+      // Also send an immediate email — the user explicitly opted into this by
+      // setting alert_on_level / alert_on_change, so they want to be notified
+      // out-of-band rather than waiting for the next morning's digest.
+      try {
+        const { data: authUser } = await supabase.auth.admin.getUserById(m.user_id)
+        const email = authUser?.user?.email
+        if (email) {
+          await sendRiskAlertEmail({
+            to: email,
+            monitorTitle: m.title,
+            score: composite,
+            previousScore: prevScore,
+            threshold: alertLevel,
+            changeThreshold: alertChange,
+            reason: crossedLevel ? "level_crossed" : "change_jumped",
+            summary,
+            monitorId: m.id,
+          })
+        }
+      } catch (err) {
+        console.error("Risk alert email failed:", err)
+        // Don't throw — inbox item is the source of truth, email is a notification
+      }
     }
   }
 

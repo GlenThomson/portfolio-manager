@@ -61,6 +61,7 @@ export const portfolioPositions = pgTable("portfolio_positions", {
   quantity: numeric("quantity", { precision: 18, scale: 8 }).notNull(),
   averageCost: numeric("average_cost", { precision: 18, scale: 8 }).notNull(),
   assetType: assetTypeEnum("asset_type").default("stock").notNull(),
+  source: text("source").default("unknown").notNull(),
   openedAt: timestamp("opened_at").defaultNow().notNull(),
   closedAt: timestamp("closed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
