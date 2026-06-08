@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Loader2, RefreshCw, ExternalLink, Target, Settings as SettingsIcon, Sparkles, AlertTriangle, X } from "lucide-react"
+import { Loader2, RefreshCw, ExternalLink, Target, Settings as SettingsIcon, Sparkles, AlertTriangle, X, Wallet, BarChart3, Plus, Trash2, Edit3, Check } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface ScanMarket {
@@ -70,8 +70,10 @@ function scoreColor(score: number): string {
   return "#787b86"
 }
 
+type TabKey = "picks" | "bets" | "stats" | "settings"
+
 export default function PolymarketPage() {
-  const [tab, setTab] = useState<"picks" | "settings">("picks")
+  const [tab, setTab] = useState<TabKey>("picks")
   const [markets, setMarkets] = useState<ScanMarket[]>([])
   const [scanDate, setScanDate] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -151,8 +153,13 @@ export default function PolymarketPage() {
       )}
 
       {/* Tabs */}
-      <div className="flex gap-0.5 rounded-md p-1" style={{ background: "#131722" }}>
-        {(["picks", "settings"] as const).map((k) => (
+      <div className="flex gap-0.5 rounded-md p-1 flex-wrap" style={{ background: "#131722" }}>
+        {([
+          { k: "picks" as const, label: "Today's Picks", icon: <Sparkles className="h-3.5 w-3.5" /> },
+          { k: "bets" as const, label: "My Bets", icon: <Wallet className="h-3.5 w-3.5" /> },
+          { k: "stats" as const, label: "Stats", icon: <BarChart3 className="h-3.5 w-3.5" /> },
+          { k: "settings" as const, label: "Settings", icon: <SettingsIcon className="h-3.5 w-3.5" /> },
+        ]).map(({ k, label, icon }) => (
           <button
             key={k}
             onClick={() => setTab(k)}
@@ -161,14 +168,14 @@ export default function PolymarketPage() {
               tab === k ? "bg-[#2a2e39] text-[#d1d4dc]" : "text-[#787b86] hover:text-[#d1d4dc] hover:bg-[#1e222d]"
             )}
           >
-            {k === "picks" ? <Sparkles className="h-3.5 w-3.5" /> : <SettingsIcon className="h-3.5 w-3.5" />}
-            {k === "picks" ? "Today's Picks" : "Settings"}
+            {icon}
+            {label}
           </button>
         ))}
       </div>
 
       {/* Content */}
-      {tab === "picks" ? (
+      {tab === "picks" && (
         <PicksTab
           markets={markets}
           scanDate={scanDate}
@@ -176,9 +183,10 @@ export default function PolymarketPage() {
           showAll={showAll}
           onToggleShowAll={() => setShowAll((v) => !v)}
         />
-      ) : (
-        <SettingsTab settings={settings} onSaved={fetchSettings} />
       )}
+      {tab === "bets" && <MyBetsTab walletConfigured={!!settings.wallet_address} />}
+      {tab === "stats" && <StatsTab />}
+      {tab === "settings" && <SettingsTab settings={settings} onSaved={fetchSettings} />}
     </div>
   )
 }
@@ -421,5 +429,563 @@ function NumberField({ label, value, onChange, hint }: { label: string; value: s
       />
       {hint && <p className="text-[11px] text-muted-foreground mt-1">{hint}</p>}
     </div>
+  )
+}
+
+// ── My Bets tab ──────────────────────────────────────────
+
+interface BetRow {
+  id: string
+  market_id: string
+  question: string | null
+  category: string | null
+  side: string
+  shares: string
+  avg_price_usd: string
+  current_price_usd: string | null
+  exit_price: string | null
+  exited_at: string | null
+  entered_at: string
+  pnl_usd: string | null
+  source: string
+  thesis: string | null
+  notes: string | null
+  resolved: boolean
+  resolution_outcome: string | null
+}
+
+function MyBetsTab({ walletConfigured }: { walletConfigured: boolean }) {
+  const [bets, setBets] = useState<BetRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [syncing, setSyncing] = useState(false)
+  const [syncMessage, setSyncMessage] = useState<string | null>(null)
+  const [filter, setFilter] = useState<"open" | "closed" | "all">("open")
+  const [showAdd, setShowAdd] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+
+  const fetchBets = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/polymarket/bets?filter=${filter}`)
+      if (res.ok) setBets(await res.json())
+    } finally {
+      setLoading(false)
+    }
+  }, [filter])
+
+  useEffect(() => { fetchBets() }, [fetchBets])
+
+  const syncWallet = async () => {
+    setSyncing(true)
+    setSyncMessage(null)
+    try {
+      const res = await fetch("/api/polymarket/sync-wallet", { method: "POST" })
+      const data = await res.json()
+      if (!res.ok) {
+        setSyncMessage(data.error ?? "Sync failed")
+        return
+      }
+      setSyncMessage(`Fetched ${data.positionsFetched ?? 0} from wallet · ${data.inserted ?? 0} new, ${data.updated ?? 0} updated, ${data.exited ?? 0} exited.`)
+      await fetchBets()
+    } catch (err) {
+      setSyncMessage(err instanceof Error ? err.message : "Sync failed")
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  const deleteBet = async (id: string) => {
+    const res = await fetch(`/api/polymarket/bets?id=${id}`, { method: "DELETE" })
+    if (res.ok) await fetchBets()
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex gap-0.5 rounded-md p-1" style={{ background: "#131722" }}>
+          {(["open", "closed", "all"] as const).map((f) => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={cn(
+                "px-3 py-1.5 text-xs font-medium rounded transition-colors capitalize",
+                filter === f ? "bg-[#2a2e39] text-[#d1d4dc]" : "text-[#787b86] hover:text-[#d1d4dc]"
+              )}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={() => setShowAdd((v) => !v)}>
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            Add bet
+          </Button>
+          <Button size="sm" onClick={syncWallet} disabled={syncing || !walletConfigured} title={!walletConfigured ? "Add your wallet address in Settings first" : undefined}>
+            {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Wallet className="h-3.5 w-3.5 mr-1" />}
+            Sync wallet
+          </Button>
+        </div>
+      </div>
+
+      {syncMessage && <div className="text-xs text-muted-foreground">{syncMessage}</div>}
+      {!walletConfigured && (
+        <div className="text-xs flex items-start gap-1.5" style={{ color: "#ffab00" }}>
+          <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+          Add your Polymarket wallet address in Settings to auto-sync your positions.
+        </div>
+      )}
+
+      {showAdd && <AddBetForm onSaved={() => { setShowAdd(false); fetchBets() }} onCancel={() => setShowAdd(false)} />}
+
+      {loading ? (
+        <div className="py-12 flex justify-center"><Loader2 className="h-6 w-6 animate-spin" style={{ color: "#787b86" }} /></div>
+      ) : bets.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <Wallet className="h-10 w-10 mx-auto mb-3" style={{ color: "#787b86" }} />
+            <h3 className="font-medium mb-1">No {filter === "all" ? "" : filter} bets</h3>
+            <p className="text-sm text-muted-foreground">
+              {walletConfigured ? "Click Sync wallet to pull positions, or Add bet to log one manually." : "Add a bet manually, or set your wallet in Settings to auto-sync."}
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {bets.map((b) => (
+            <BetCard
+              key={b.id}
+              bet={b}
+              editing={editingId === b.id}
+              onEdit={() => setEditingId(b.id)}
+              onCancelEdit={() => setEditingId(null)}
+              onSaved={() => { setEditingId(null); fetchBets() }}
+              onDelete={() => deleteBet(b.id)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function BetCard({ bet, editing, onEdit, onCancelEdit, onSaved, onDelete }: {
+  bet: BetRow
+  editing: boolean
+  onEdit: () => void
+  onCancelEdit: () => void
+  onSaved: () => void
+  onDelete: () => void
+}) {
+  const [thesis, setThesis] = useState(bet.thesis ?? "")
+  const [notes, setNotes] = useState(bet.notes ?? "")
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (editing) { setThesis(bet.thesis ?? ""); setNotes(bet.notes ?? "") }
+  }, [editing, bet.thesis, bet.notes])
+
+  const shares = Number(bet.shares)
+  const avg = Number(bet.avg_price_usd)
+  const current = Number(bet.current_price_usd ?? bet.exit_price ?? bet.avg_price_usd)
+  const staked = shares * avg
+  const value = shares * current
+  const pnl = bet.pnl_usd != null ? Number(bet.pnl_usd) : value - staked
+  const pnlPct = staked > 0 ? (pnl / staked) * 100 : 0
+  const isOpen = !bet.exited_at
+  const sideColor = bet.side === "yes" ? "#26a69a" : "#ef5350"
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      const res = await fetch("/api/polymarket/bets", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: bet.id, thesis, notes }),
+      })
+      if (res.ok) onSaved()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const closeBet = async () => {
+    setSaving(true)
+    try {
+      const res = await fetch("/api/polymarket/bets", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: bet.id,
+          exited_at: new Date().toISOString(),
+          exit_price: current,
+          pnl_usd: pnl,
+        }),
+      })
+      if (res.ok) onSaved()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardContent className="p-3">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 text-[10px] text-muted-foreground mb-1 flex-wrap">
+              <span className="font-bold uppercase px-1.5 py-0.5 rounded" style={{ background: `${sideColor}22`, color: sideColor }}>
+                {bet.side}
+              </span>
+              {bet.category && <span className="px-1.5 py-0.5 rounded bg-muted">{bet.category}</span>}
+              <span>{bet.source === "wallet_sync" ? "from wallet" : "manual"}</span>
+              <span>entered {new Date(bet.entered_at).toLocaleDateString()}</span>
+              {!isOpen && <span>exited {new Date(bet.exited_at!).toLocaleDateString()}</span>}
+            </div>
+            <h4 className="font-medium text-sm">{bet.question ?? bet.market_id}</h4>
+          </div>
+          <div className="text-right shrink-0">
+            <div className="text-[10px] uppercase text-muted-foreground">{isOpen ? "Unrealized" : "Realized"}</div>
+            <div className="text-base font-bold" style={{ color: pnl >= 0 ? "#26a69a" : "#ef5350" }}>
+              {pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}
+            </div>
+            <div className="text-[10px]" style={{ color: pnl >= 0 ? "#26a69a" : "#ef5350" }}>
+              {pnl >= 0 ? "+" : ""}{pnlPct.toFixed(1)}%
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-2 grid grid-cols-4 gap-2 text-center text-[11px]">
+          <div>
+            <div className="text-[9px] uppercase text-muted-foreground">Shares</div>
+            <div className="font-medium">{shares.toFixed(2)}</div>
+          </div>
+          <div>
+            <div className="text-[9px] uppercase text-muted-foreground">Avg ¢</div>
+            <div className="font-medium">{(avg * 100).toFixed(1)}</div>
+          </div>
+          <div>
+            <div className="text-[9px] uppercase text-muted-foreground">{isOpen ? "Now ¢" : "Exit ¢"}</div>
+            <div className="font-medium">{(current * 100).toFixed(1)}</div>
+          </div>
+          <div>
+            <div className="text-[9px] uppercase text-muted-foreground">Value</div>
+            <div className="font-medium">${value.toFixed(2)}</div>
+          </div>
+        </div>
+
+        {editing ? (
+          <div className="mt-3 space-y-2">
+            <textarea
+              value={thesis}
+              onChange={(e) => setThesis(e.target.value)}
+              placeholder="Thesis — why you took this bet"
+              className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+              rows={2}
+            />
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Notes — updates, news, exit reasoning"
+              className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+              rows={2}
+            />
+            <div className="flex gap-2 justify-end">
+              <Button size="sm" variant="outline" onClick={onCancelEdit}>Cancel</Button>
+              <Button size="sm" onClick={save} disabled={saving}>
+                {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Check className="h-3.5 w-3.5 mr-1" />}
+                Save
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {(bet.thesis || bet.notes) && (
+              <div className="mt-2 space-y-1 text-[11px]">
+                {bet.thesis && <div><span className="text-muted-foreground">Thesis:</span> {bet.thesis}</div>}
+                {bet.notes && <div><span className="text-muted-foreground">Notes:</span> {bet.notes}</div>}
+              </div>
+            )}
+            <div className="mt-2 flex gap-1 justify-end">
+              <a
+                href={`https://polymarket.com/event/${bet.market_id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline px-2 py-1"
+              >
+                Open <ExternalLink className="h-3 w-3" />
+              </a>
+              <button onClick={onEdit} className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary px-2 py-1">
+                <Edit3 className="h-3 w-3" /> Edit
+              </button>
+              {isOpen && (
+                <button onClick={closeBet} disabled={saving} className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary px-2 py-1">
+                  <Check className="h-3 w-3" /> Mark closed
+                </button>
+              )}
+              <button onClick={onDelete} className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-red-500 px-2 py-1">
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function AddBetForm({ onSaved, onCancel }: { onSaved: () => void; onCancel: () => void }) {
+  const [marketId, setMarketId] = useState("")
+  const [question, setQuestion] = useState("")
+  const [category, setCategory] = useState("")
+  const [side, setSide] = useState<"yes" | "no">("yes")
+  const [shares, setShares] = useState("")
+  const [avgPrice, setAvgPrice] = useState("")
+  const [thesis, setThesis] = useState("")
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const submit = async () => {
+    setError(null)
+    if (!marketId.trim() || !shares || !avgPrice) {
+      setError("Market slug, shares, and avg price are required")
+      return
+    }
+    setSaving(true)
+    try {
+      const res = await fetch("/api/polymarket/bets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          market_id: marketId.trim(),
+          question: question.trim() || null,
+          category: category.trim() || null,
+          side,
+          shares: Number(shares),
+          avg_price_usd: Number(avgPrice),
+          thesis: thesis.trim() || null,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setError(data.error ?? "Save failed"); return }
+      onSaved()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardContent className="p-4 space-y-3">
+        <h3 className="font-medium text-sm">Add bet manually</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">Market slug or ID *</label>
+            <input
+              value={marketId}
+              onChange={(e) => setMarketId(e.target.value)}
+              placeholder="e.g. will-bitcoin-reach-200k-in-2026"
+              className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs font-mono"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">Category</label>
+            <input
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              placeholder="Crypto, Politics, etc."
+              className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">Question</label>
+            <input
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              placeholder="What does the market ask?"
+              className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">Side *</label>
+            <div className="flex gap-1">
+              {(["yes", "no"] as const).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setSide(s)}
+                  className={cn(
+                    "flex-1 py-1.5 text-xs font-medium rounded uppercase transition-colors",
+                    side === s
+                      ? s === "yes" ? "bg-emerald-500/20 text-emerald-500 border border-emerald-500/30" : "bg-red-500/20 text-red-500 border border-red-500/30"
+                      : "bg-muted text-muted-foreground border border-transparent"
+                  )}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">Shares *</label>
+            <input
+              type="number"
+              value={shares}
+              onChange={(e) => setShares(e.target.value)}
+              placeholder="e.g. 100"
+              className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">Avg price (USD per share, 0-1) *</label>
+            <input
+              type="number"
+              step="0.01"
+              value={avgPrice}
+              onChange={(e) => setAvgPrice(e.target.value)}
+              placeholder="e.g. 0.42"
+              className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">Thesis</label>
+            <textarea
+              value={thesis}
+              onChange={(e) => setThesis(e.target.value)}
+              placeholder="Why are you taking this bet?"
+              className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+              rows={2}
+            />
+          </div>
+        </div>
+        {error && <p className="text-xs text-red-500">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <Button size="sm" variant="outline" onClick={onCancel}>Cancel</Button>
+          <Button size="sm" onClick={submit} disabled={saving}>
+            {saving && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}
+            Save bet
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+// ── Stats tab ────────────────────────────────────────────
+
+interface OverallStats {
+  totalBets: number
+  openBets: number
+  closedBets: number
+  wins: number
+  losses: number
+  winRate: number
+  openValue: number
+  openCost: number
+  openPnl: number
+  realizedPnl: number
+  realizedStaked: number
+  realizedRoi: number
+  totalPnl: number
+}
+
+interface CategoryStatsRow {
+  category: string
+  betCount: number
+  wins: number
+  losses: number
+  winRate: number
+  totalPnl: number
+  totalStaked: number
+  roi: number
+}
+
+function StatsTab() {
+  const [stats, setStats] = useState<{ overall: OverallStats; byCategory: CategoryStatsRow[] } | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch("/api/polymarket/stats")
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { setStats(d); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [])
+
+  if (loading) {
+    return <div className="py-12 flex justify-center"><Loader2 className="h-6 w-6 animate-spin" style={{ color: "#787b86" }} /></div>
+  }
+  if (!stats || stats.overall.totalBets === 0) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center">
+          <BarChart3 className="h-10 w-10 mx-auto mb-3" style={{ color: "#787b86" }} />
+          <h3 className="font-medium mb-1">No bets to analyse yet</h3>
+          <p className="text-sm text-muted-foreground">Sync your wallet or add a bet manually to see stats roll in.</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const { overall, byCategory } = stats
+
+  return (
+    <div className="space-y-4">
+      {/* Headline cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <StatCard label="Total P&L" value={`${overall.totalPnl >= 0 ? "+" : ""}$${overall.totalPnl.toFixed(2)}`} color={overall.totalPnl >= 0 ? "#26a69a" : "#ef5350"} />
+        <StatCard label="Win rate" value={`${(overall.winRate * 100).toFixed(0)}%`} sub={`${overall.wins}W / ${overall.losses}L`} />
+        <StatCard label="Open P&L" value={`${overall.openPnl >= 0 ? "+" : ""}$${overall.openPnl.toFixed(2)}`} sub={`${overall.openBets} open`} color={overall.openPnl >= 0 ? "#26a69a" : "#ef5350"} />
+        <StatCard label="Realized ROI" value={`${(overall.realizedRoi * 100).toFixed(1)}%`} sub={`$${overall.realizedStaked.toFixed(0)} staked`} color={overall.realizedRoi >= 0 ? "#26a69a" : "#ef5350"} />
+      </div>
+
+      {/* Category breakdown */}
+      <Card>
+        <CardContent className="p-4">
+          <h3 className="font-medium text-sm mb-3">By category</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
+                  <th className="text-left font-medium pb-2">Category</th>
+                  <th className="text-right font-medium pb-2">Bets</th>
+                  <th className="text-right font-medium pb-2">Win rate</th>
+                  <th className="text-right font-medium pb-2">Staked</th>
+                  <th className="text-right font-medium pb-2">P&L</th>
+                  <th className="text-right font-medium pb-2">ROI</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byCategory.map((row) => (
+                  <tr key={row.category} className="border-b border-border/40">
+                    <td className="py-2 font-medium">{row.category}</td>
+                    <td className="text-right py-2">{row.betCount}</td>
+                    <td className="text-right py-2">{(row.wins + row.losses) > 0 ? `${(row.winRate * 100).toFixed(0)}%` : "—"}</td>
+                    <td className="text-right py-2">${row.totalStaked.toFixed(0)}</td>
+                    <td className="text-right py-2 font-medium" style={{ color: row.totalPnl >= 0 ? "#26a69a" : "#ef5350" }}>
+                      {row.totalPnl >= 0 ? "+" : ""}${row.totalPnl.toFixed(2)}
+                    </td>
+                    <td className="text-right py-2 font-medium" style={{ color: row.roi >= 0 ? "#26a69a" : "#ef5350" }}>
+                      {row.totalStaked > 0 ? `${row.roi >= 0 ? "+" : ""}${(row.roi * 100).toFixed(1)}%` : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
+  return (
+    <Card>
+      <CardContent className="p-3">
+        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
+        <div className="text-xl font-bold mt-1" style={color ? { color } : undefined}>{value}</div>
+        {sub && <div className="text-[10px] text-muted-foreground mt-0.5">{sub}</div>}
+      </CardContent>
+    </Card>
   )
 }
