@@ -36,6 +36,9 @@ export async function GET(request: NextRequest) {
   }
   const supabase = createServiceClient(url, key, { auth: { persistSession: false } })
 
+  // (Akahu sync runs in the morning cron only — keeps this evening run focused on
+  // refreshing risk scores so we don't blow the 60s function timeout.)
+
   // Find all users who have at least one active risk monitor — process only them
   const { data: monitors } = await supabase
     .from("risk_monitors")

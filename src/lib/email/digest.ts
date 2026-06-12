@@ -101,6 +101,40 @@ export function renderDigestHtml(content: DigestContent, displayName?: string): 
     `
     : ""
 
+  // Section: Polymarket top picks
+  const polymarketPicks = content.polymarketPicks ?? []
+  const polymarketHtml = polymarketPicks.length > 0
+    ? `
+      <h3 style="margin: 24px 0 8px; font-size: 13px; color: #666; text-transform: uppercase; letter-spacing: 0.5px;">Polymarket — today's top picks</h3>
+      ${polymarketPicks.map((p) => {
+        const yesPct = Math.round(p.yesPrice * 100)
+        const sideLabel = p.aiSuggestedSide ? p.aiSuggestedSide.toUpperCase() : ""
+        const sideColor = p.aiSuggestedSide === "yes" ? "#26a69a" : p.aiSuggestedSide === "no" ? "#ef5350" : "#787b86"
+        return `
+          <div style="border-left: 3px solid #2962ff; padding: 10px 12px; margin-bottom: 8px; background: #f8f9fa; border-radius: 0 6px 6px 0;">
+            <div style="display: flex; justify-content: space-between; gap: 8px;">
+              <div style="flex: 1; min-width: 0;">
+                <div style="font-weight: 600; color: #1a1a1a; font-size: 13px;">${p.question}</div>
+                ${p.aiThesis ? `<div style="font-size: 12px; color: #555; margin-top: 4px;">${p.aiThesis}</div>` : ""}
+                <div style="font-size: 11px; color: #999; margin-top: 4px;">
+                  ${p.category ?? ""}${p.daysToResolution != null ? ` · ${p.daysToResolution}d to resolution` : ""} · YES priced ${yesPct}%
+                </div>
+              </div>
+              <div style="text-align: right; white-space: nowrap;">
+                <div style="font-size: 22px; font-weight: 700; color: #2962ff;">${Math.round(p.aiScore)}</div>
+                ${sideLabel ? `<div style="font-size: 11px; font-weight: 600; color: ${sideColor};">${sideLabel}</div>` : ""}
+              </div>
+            </div>
+            <a href="${p.marketUrl}" style="font-size: 11px; color: #2962ff; text-decoration: none; display: inline-block; margin-top: 4px;">Open on Polymarket →</a>
+          </div>
+        `
+      }).join("")}
+      <p style="font-size: 11px; color: #999; margin: 4px 0;">
+        <a href="${APP_URL}/polymarket" style="color: #2962ff; text-decoration: none;">View all picks →</a>
+      </p>
+    `
+    : ""
+
   // Section: Positions without plans nudge
   const noPlanHtml = positionsWithoutPlans.length > 0
     ? `

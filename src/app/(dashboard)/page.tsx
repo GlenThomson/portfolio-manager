@@ -122,17 +122,32 @@ export default function DashboardPage() {
     }).catch(() => {})
   }, [isLoading, data, totalValueHome, totalCashHome, totalOtherAssets, totalLiabilities, netWorth])
 
-  // Daily bank sync — only fires once per 24h
+  // Daily bank + investment sync — only fires once per 24h
   useEffect(() => {
     if (bankSyncTriggered.current || isLoading || !data) return
     bankSyncTriggered.current = true
     const lastSync = localStorage.getItem("lastBankSync")
     const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000
     if (lastSync && Number(lastSync) > oneDayAgo) return
+
+    // Bank balances
     fetch("/api/brokers/akahu/sync-bank", { method: "POST" })
       .then((res) => {
-        // Set timestamp on success OR 400 (not connected) to avoid retrying every load
         if (res.ok || res.status === 400) localStorage.setItem("lastBankSync", String(Date.now()))
+      })
+      .catch(() => {})
+
+    // Investment positions (Sharesies via Akahu) — need a portfolioId; pick the user's first one
+    fetch("/api/portfolios")
+      .then((r) => r.ok ? r.json() : null)
+      .then((portfolios) => {
+        const portfolioId = Array.isArray(portfolios) && portfolios[0]?.id
+        if (!portfolioId) return
+        return fetch("/api/brokers/akahu/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ portfolioId }),
+        })
       })
       .catch(() => {})
   }, [isLoading, data])

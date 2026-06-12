@@ -15,6 +15,7 @@ import { StockScore } from "@/components/market/stock-score"
 import { StockNews } from "@/components/market/stock-news"
 import { OptionsChain } from "@/components/market/options-chain"
 import { PositionPlan } from "@/components/market/position-plan"
+import { StockLogo } from "@/components/ui/stock-logo"
 import { Button } from "@/components/ui/button"
 import { Star, Plus, Loader2, BarChart3 } from "lucide-react"
 import { useRouter } from "next/navigation"
@@ -260,7 +261,8 @@ export default function StockDetailPage() {
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
         {quote ? (
           <>
-            <div className="flex items-baseline gap-2">
+            <div className="flex items-center gap-2">
+              <StockLogo symbol={quote.symbol} size={28} />
               <h1 className="text-xl font-bold">{quote.symbol}</h1>
               <span className="text-sm text-muted-foreground">{quote.shortName}</span>
             </div>

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, Fragment, useMemo } from "react"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { getCurrentUserId } from "@/lib/supabase/user"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -18,10 +18,12 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Plus, TrendingUp, TrendingDown, DollarSign, Briefcase, Upload, Wallet, ArrowUpRight, ArrowDownRight } from "lucide-react"
+import { Plus, TrendingUp, TrendingDown, DollarSign, Briefcase, Upload, Wallet, ArrowUpRight, ArrowDownRight, ArrowUp, ArrowDown, ArrowUpDown, Trash2, RefreshCw, Loader2 } from "lucide-react"
+import { cn } from "@/lib/utils"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { BrokerConnectDialog } from "@/components/portfolio/broker-connect"
+import { StockLogo } from "@/components/ui/stock-logo"
 import { PositionDetailRow } from "@/components/portfolio/position-detail-row"
 import { CsvExport } from "@/components/portfolio/csv-export"
 import { TransactionFilters } from "@/components/portfolio/transaction-filters"
@@ -35,6 +37,10 @@ interface Position {
   average_cost: string
   asset_type: string
   opened_at: string
+  source: string
+  last_price?: string | null
+  last_price_at?: string | null
+  currency?: string
 }
 
 interface DividendTransaction {
@@ -54,7 +60,51 @@ interface TransactionForm {
 
 export default function PortfolioDetailPage() {
   const params = useParams()
+  const router = useRouter()
   const portfolioId = params.id as string
+
+  async function deletePortfolio() {
+    const name = portfolio?.name ?? "this portfolio"
+    if (!confirm(`Delete "${name}"? This removes all positions and transactions in it. This cannot be undone.`)) return
+    const res = await fetch(`/api/portfolios/${portfolioId}`, { method: "DELETE" })
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}))
+      alert(j.error ?? "Failed to delete portfolio")
+      return
+    }
+    router.push("/portfolio")
+  }
+
+  const [syncing, setSyncing] = useState(false)
+  const [syncMessage, setSyncMessage] = useState<string | null>(null)
+  async function syncSharesies() {
+    setSyncing(true)
+    setSyncMessage(null)
+    try {
+      const res = await fetch("/api/brokers/akahu/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ portfolioId }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setSyncMessage(data.error ?? "Sync failed")
+        return
+      }
+      const parts: string[] = []
+      if (data.imported) parts.push(`${data.imported} new`)
+      if (data.skipped) parts.push(`${data.skipped} updated`)
+      if (data.closed) parts.push(`${data.closed} closed`)
+      setSyncMessage(parts.length > 0 ? `Synced: ${parts.join(", ")}` : "No changes")
+      // Re-fetch state instead of a full page reload — keeps scroll/expanded rows intact
+      await fetchData()
+      // Quotes are fetched in a separate effect; trigger by changing positions state
+    } catch (err) {
+      setSyncMessage(err instanceof Error ? err.message : "Sync failed")
+    } finally {
+      setSyncing(false)
+    }
+  }
   const [portfolio, setPortfolio] = useState<{ name: string; is_paper: boolean } | null>(null)
   const [positions, setPositions] = useState<Position[]>([])
   const [dividends, setDividends] = useState<DividendTransaction[]>([])
@@ -155,8 +205,15 @@ export default function PortfolioDetailPage() {
   }
 
   async function fetchQuotes() {
-    const symbols = positions.filter((p) => p.asset_type !== "cash").map((p) => p.symbol).join(",")
-    if (!symbols) return
+    // Only request symbols Yahoo can resolve. Skip:
+    //  - cash entries
+    //  - IBKR options (OSI format like "INTC  260605P00091000" — has spaces, Yahoo can't price)
+    //  - Anything else with spaces (multi-leg trades, etc.)
+    const fetchableSymbols = positions
+      .filter((p) => p.asset_type !== "cash" && p.asset_type !== "option" && !p.symbol.includes(" "))
+      .map((p) => p.symbol)
+    if (fetchableSymbols.length === 0) return
+    const symbols = fetchableSymbols.map((s) => encodeURIComponent(s)).join(",")
     try {
       const res = await fetch(`/api/market/quote?symbols=${symbols}`)
       if (res.ok) {
@@ -241,6 +298,7 @@ export default function PortfolioDetailPage() {
         quantity: quantity.toString(),
         average_cost: price.toString(),
         asset_type: "stock",
+        source: "manual",
       })
     }
 
@@ -262,8 +320,39 @@ export default function PortfolioDetailPage() {
   }
 
   // Split positions into stocks and cash
-  const stockPositions = positions.filter((p) => p.asset_type !== "cash")
   const cashPositions = positions.filter((p) => p.asset_type === "cash")
+  const rawStockPositions = positions.filter((p) => p.asset_type !== "cash")
+
+  // Sorting for stock positions table
+  const [posSortCol, setPosSortCol] = useState<"symbol" | "plan" | "qty" | "avgCost" | "price" | "marketValue" | "pnl" | "day">("marketValue")
+  const [posSortDir, setPosSortDir] = useState<"asc" | "desc">("desc")
+  const togglePosSort = (col: typeof posSortCol) => {
+    if (posSortCol === col) setPosSortDir(posSortDir === "desc" ? "asc" : "desc")
+    else { setPosSortCol(col); setPosSortDir("desc") }
+  }
+
+  const stockPositions = useMemo(() => {
+    const sign = posSortDir === "desc" ? -1 : 1
+    const arr = [...rawStockPositions]
+    arr.sort((a, b) => {
+      const qa = parseFloat(a.quantity), qb = parseFloat(b.quantity)
+      const ca = parseFloat(a.average_cost), cb = parseFloat(b.average_cost)
+      const pa = quotes[a.symbol]?.price ?? 0, pb = quotes[b.symbol]?.price ?? 0
+      let cmp = 0
+      switch (posSortCol) {
+        case "symbol": cmp = a.symbol.localeCompare(b.symbol); break
+        case "plan": cmp = (plans[a.symbol]?.state ?? "").localeCompare(plans[b.symbol]?.state ?? ""); break
+        case "qty": cmp = qa - qb; break
+        case "avgCost": cmp = ca - cb; break
+        case "price": cmp = pa - pb; break
+        case "marketValue": cmp = qa * pa - qb * pb; break
+        case "pnl": cmp = (pa - ca) * qa - (pb - cb) * qb; break
+        case "day": cmp = (quotes[a.symbol]?.changePct ?? 0) - (quotes[b.symbol]?.changePct ?? 0); break
+      }
+      return cmp * sign
+    })
+    return arr
+  }, [rawStockPositions, posSortCol, posSortDir, quotes, plans])
 
   // Calculate totals (stocks only -- cash is separate)
   const totalValue = stockPositions.reduce((sum, p) => {
@@ -386,8 +475,31 @@ export default function PortfolioDetailPage() {
             )}
           </h1>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          {syncMessage && <span className="text-xs text-muted-foreground">{syncMessage}</span>}
+          <Button
+            variant="outline"
+            size="sm"
+            className="sm:size-auto"
+            onClick={syncSharesies}
+            disabled={syncing}
+            title="Pull latest holdings from Sharesies via Akahu"
+          >
+            {syncing ? <Loader2 className="h-4 w-4 animate-spin sm:mr-2" /> : <RefreshCw className="h-4 w-4 sm:mr-2" />}
+            <span className="hidden sm:inline">Sync Sharesies</span>
+            <span className="sm:hidden">Sync</span>
+          </Button>
           <CsvExport positions={exportPositions} portfolioName={portfolio?.name ?? "Portfolio"} />
+          <Button
+            variant="outline"
+            size="sm"
+            className="sm:size-auto text-destructive hover:text-destructive hover:bg-destructive/10"
+            onClick={deletePortfolio}
+            title="Delete portfolio"
+          >
+            <Trash2 className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Delete</span>
+          </Button>
           <Button variant="outline" size="sm" className="sm:size-auto" onClick={() => setImportDialogOpen(true)}>
 
             <Upload className="mr-2 h-4 w-4" />
@@ -633,14 +745,16 @@ export default function PortfolioDetailPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Symbol</TableHead>
-                  <TableHead>Plan</TableHead>
-                  <TableHead className="text-right">Qty</TableHead>
-                  <TableHead className="text-right">Avg Cost</TableHead>
-                  <TableHead className="text-right">Price</TableHead>
-                  <TableHead className="text-right">Market Value</TableHead>
-                  <TableHead className="text-right">P&L</TableHead>
-                  <TableHead className="text-right">Day</TableHead>
+                  <PosSortHead col="symbol" align="left" sortCol={posSortCol} sortDir={posSortDir} onToggle={togglePosSort}>Symbol</PosSortHead>
+                  <TableHead>Source</TableHead>
+                  <PosSortHead col="plan" align="left" sortCol={posSortCol} sortDir={posSortDir} onToggle={togglePosSort}>Plan</PosSortHead>
+                  <PosSortHead col="qty" align="right" sortCol={posSortCol} sortDir={posSortDir} onToggle={togglePosSort}>Qty</PosSortHead>
+                  <PosSortHead col="avgCost" align="right" sortCol={posSortCol} sortDir={posSortDir} onToggle={togglePosSort}>Avg Cost</PosSortHead>
+                  <PosSortHead col="price" align="right" sortCol={posSortCol} sortDir={posSortDir} onToggle={togglePosSort}>Price</PosSortHead>
+                  <PosSortHead col="marketValue" align="right" sortCol={posSortCol} sortDir={posSortDir} onToggle={togglePosSort}>Market Value</PosSortHead>
+                  <PosSortHead col="pnl" align="right" sortCol={posSortCol} sortDir={posSortDir} onToggle={togglePosSort}>P&amp;L</PosSortHead>
+                  <PosSortHead col="day" align="right" sortCol={posSortCol} sortDir={posSortDir} onToggle={togglePosSort}>Day</PosSortHead>
+                  <TableHead className="w-[40px]" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -648,11 +762,17 @@ export default function PortfolioDetailPage() {
                   const qty = parseFloat(pos.quantity)
                   const avgCost = parseFloat(pos.average_cost)
                   const q = quotes[pos.symbol]
-                  const price = q?.price ?? 0
+                  // Prefer live Yahoo quote; fall back to broker-supplied last price
+                  // for symbols Yahoo can't quote (options, HK/KR stocks, etc.)
+                  const lastPrice = pos.last_price != null ? parseFloat(pos.last_price) : 0
+                  const price = (q?.price ?? 0) > 0 ? q!.price : lastPrice
+                  const isLivePrice = (q?.price ?? 0) > 0
                   const marketValue = price * qty
                   const pnl = (price - avgCost) * qty
                   const pnlPct = avgCost > 0 ? ((price - avgCost) / avgCost) * 100 : 0
                   const isExpanded = expandedPositions.has(pos.id)
+                  // Suppress eslint unused — kept for future "stale" indicator
+                  void isLivePrice
 
                   return (
                     <Fragment key={pos.id}>
@@ -663,11 +783,15 @@ export default function PortfolioDetailPage() {
                         <TableCell>
                           <Link
                             href={`/stock/${pos.symbol}`}
-                            className="font-medium text-primary hover:underline"
+                            className="font-medium text-primary hover:underline inline-flex items-center gap-2"
                             onClick={(e) => e.stopPropagation()}
                           >
+                            <StockLogo symbol={pos.symbol} size={20} />
                             {pos.symbol}
                           </Link>
+                        </TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <SourceBadge positionId={pos.id} source={pos.source ?? "unknown"} onChanged={fetchData} />
                         </TableCell>
                         <TableCell>
                           <PlanBadge plan={plans[pos.symbol]} symbol={pos.symbol} />
@@ -698,6 +822,24 @@ export default function PortfolioDetailPage() {
                             </>
                           ) : "\u2014"}
                         </TableCell>
+                        <TableCell className="text-right">
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation()
+                              if (!confirm(`Close ${pos.symbol}? It will be hidden from your portfolio.`)) return
+                              await fetch(`/api/positions/${pos.id}`, {
+                                method: "PATCH",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ close: true }),
+                              })
+                              await fetchData()
+                            }}
+                            className="text-muted-foreground hover:text-destructive p-1"
+                            title="Close this position"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </TableCell>
                       </TableRow>
                       {isExpanded && (
                         <PositionDetailRow
@@ -707,7 +849,7 @@ export default function PortfolioDetailPage() {
                           quantity={qty}
                           averageCost={avgCost}
                           currentPrice={price}
-                          colSpan={8}
+                          colSpan={10}
                           onPlanChange={refreshPlans}
                         />
                       )}
@@ -852,6 +994,56 @@ export default function PortfolioDetailPage() {
       {/* Transaction History with Filters */}
       <TransactionFilters portfolioId={portfolioId} />
     </div>
+  )
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function PosSortHead({ col, align, sortCol, sortDir, onToggle, children }: { col: any; align: "left" | "right"; sortCol: any; sortDir: "asc" | "desc"; onToggle: (c: any) => void; children: React.ReactNode }) {
+  const active = sortCol === col
+  const Icon = !active ? ArrowUpDown : sortDir === "desc" ? ArrowDown : ArrowUp
+  return (
+    <TableHead
+      className={cn("cursor-pointer select-none hover:bg-muted/40 transition-colors", align === "right" && "text-right")}
+      onClick={() => onToggle(col)}
+    >
+      <div className={cn("flex items-center gap-1", align === "right" && "justify-end")}>
+        {children}
+        <Icon className={cn("h-3 w-3", active ? "text-foreground" : "text-muted-foreground/50")} />
+      </div>
+    </TableHead>
+  )
+}
+
+const SOURCE_LABELS: Record<string, { label: string; cls: string }> = {
+  akahu:   { label: "Akahu",   cls: "bg-blue-500/15 text-blue-500 border-blue-500/30" },
+  ibkr:    { label: "IBKR",    cls: "bg-purple-500/15 text-purple-500 border-purple-500/30" },
+  csv:     { label: "CSV",     cls: "bg-amber-500/15 text-amber-500 border-amber-500/30" },
+  manual:  { label: "Manual",  cls: "bg-emerald-500/15 text-emerald-500 border-emerald-500/30" },
+  unknown: { label: "Unknown", cls: "bg-muted text-muted-foreground border-border" },
+}
+
+function SourceBadge({ positionId, source, onChanged }: { positionId: string; source: string; onChanged: () => void }) {
+  const meta = SOURCE_LABELS[source] ?? SOURCE_LABELS.unknown
+  return (
+    <select
+      value={source}
+      onChange={async (e) => {
+        const next = e.target.value
+        if (next === source) return
+        await fetch(`/api/positions/${positionId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source: next }),
+        })
+        onChanged()
+      }}
+      className={`text-[10px] px-1.5 py-0.5 rounded border capitalize whitespace-nowrap cursor-pointer hover:opacity-80 transition-opacity ${meta.cls}`}
+      title="Set the broker/source that owns this position. Akahu sync will auto-close akahu-sourced positions that are no longer reported."
+    >
+      {Object.entries(SOURCE_LABELS).map(([k, v]) => (
+        <option key={k} value={k} className="bg-background text-foreground">{v.label}</option>
+      ))}
+    </select>
   )
 }
 

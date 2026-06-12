@@ -38,6 +38,18 @@ export interface DigestRiskRow {
   summary: string | null
 }
 
+export interface DigestPolymarketPick {
+  marketId: string
+  question: string
+  category: string | null
+  yesPrice: number
+  aiScore: number
+  aiThesis: string | null
+  aiSuggestedSide: string | null
+  marketUrl: string
+  daysToResolution: number | null
+}
+
 export interface DigestContent {
   date: string // YYYY-MM-DD in user tz
   portfolio: {
@@ -54,6 +66,7 @@ export interface DigestContent {
   positionsWithoutPlans: string[]
   positions: DigestPosition[]
   risks: DigestRiskRow[]
+  polymarketPicks: DigestPolymarketPick[]
 }
 
 // ── Service-role client (bypasses RLS for cron) ─────────
@@ -237,6 +250,35 @@ export async function generateDigestForUser(userId: string): Promise<DigestConte
     })
   }
 
+  // 10. Polymarket — today's top picks above the user's min AI score
+  const { data: pmSettings } = await supabase
+    .from("polymarket_settings")
+    .select("min_ai_score")
+    .eq("user_id", userId)
+    .single()
+  const minPmScore = pmSettings?.min_ai_score != null ? Number(pmSettings.min_ai_score) : 60
+
+  const { data: pmTopPicks } = await supabase
+    .from("polymarket_scan_results")
+    .select("market_id, question, category, yes_price, ai_score, ai_thesis, ai_suggested_side, market_url, end_date, scan_date")
+    .eq("user_id", userId)
+    .gte("ai_score", minPmScore)
+    .order("scan_date", { ascending: false })
+    .order("ai_score", { ascending: false })
+    .limit(3)
+
+  const polymarketPicks: DigestPolymarketPick[] = (pmTopPicks ?? []).map((p) => ({
+    marketId: p.market_id,
+    question: p.question,
+    category: p.category,
+    yesPrice: Number(p.yes_price ?? 0),
+    aiScore: Number(p.ai_score ?? 0),
+    aiThesis: p.ai_thesis,
+    aiSuggestedSide: p.ai_suggested_side,
+    marketUrl: p.market_url ?? "https://polymarket.com",
+    daysToResolution: p.end_date ? Math.round((Date.parse(p.end_date) - Date.now()) / 86400_000) : null,
+  }))
+
   return {
     date: new Date().toISOString().slice(0, 10),
     portfolio: {
@@ -250,6 +292,7 @@ export async function generateDigestForUser(userId: string): Promise<DigestConte
     positionsWithoutPlans,
     positions,
     risks,
+    polymarketPicks,
   }
 }
 
